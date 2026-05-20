@@ -1,0 +1,100 @@
+J'ai 3 modules SIM800C USB (avec une carte SIM insérée dans chaque module SIM800C USB) connecté à mon pc windows (sur les ports COM5, COM6, COM7) via un USB Hub 3.0 alimenté.
+Je veux le code pour une application (Frontend web + Backend en GoLang + Base de données MyQSL) qui communique en temps reel avec les modules et permet de superviser et d'executer les fonctions des modules SIM800C USB
+
+Le projet est stocké dans C:\xampp\htdocs\aa_Toolbox\test_sim800c\
+
+Le code généré sera stocké dans C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter
+
+Le fichier Codes_USSD_CI.xlsx (voir pièce jointe ou dans C:\xampp\htdocs\aa_Toolbox\test_sim800c\storage\excel\) contient la liste des codes ussd des operateurs de telephonie mobile en Cote d'Ivoire (CI).
+Le fichier contient les colonnes ci-dessous : 
+	- ID : identifiant du code ussd
+	- Carrier : Operateur executant le code ussd
+	- Action : Categorie ou Registre dand lequel l'on peut classer l'action du code ussd 
+	- Target : Interne si le beneficiare de l'action du code ussd est l'utilisateur de la SIM ou le numero de la SIM; 
+				Externe si le beneficiare de l'action du code ussd est un utilisateur autre que celui de la SIM ou le beneficiaire est un numero autre que le numero de la SIM
+	- Operation : Nom de l'Operation du code ussd
+	- USSD_Code : Structure du code ussd
+	- Information_INPUT : Information attendu en entrée avant execution du code ussd
+	- Information_OUTPUT : Information obtenu en sortie après execution du code ussd
+	- Scope : Defini si le code ussd en consideré comme utile (IN) ou inutile (OUT) dans le contexte du projet
+	- Comment : Commentaire
+	- Parent_USSD_ID : ID du code ussd parent du code ussd actuel
+
+
+L'indicatif telephonique de la Cote d'Ivoire (CI) est +225 ou 00225 ou 225
+Le plan de numérotation en Cote d'Ivoire (CI) est à 10 chiffires et est reparti comme suit par operateur de telephonie mobile : 
+	- Orange CI : Préfixe 07 (ex: 07 XX XX XX XX)
+	- MTN CI : Préfixe 05 (ex: 05 XX XX XX XX)
+	- Moov Africa CI : Préfixe 01 (ex: 01 XX XX XX XX)
+		
+- Fonction 1 : Module Auto-Discovery 
+1-1- Scan et Identification de tous les modules SIM800C USB connecté à l'ordinateur.
+1-2- Pour chaque module SIM800C USB, collecter le informations de la SIM insérée, en executant le code ussd de la colonne "Code USSD" où Nom opérateur mobile == Universel
+	Le module SIM800C USB pourra etre identifié aussi par le numero de telephone de la carte SIM presente dans le module
+	Exemple : IMEI (indicatif telephonique + numero de telephone de la SIM)
+1-3- Afficher les informations dans un dashboard ( en temps reel )
+
+- Fonction 2-1 : SIM Status Manual-Discovery
+2-1-1- Pour chaque module SIM800C USB, Afin de collecter les informations de la SIM insérée, creer un bouton (inclure une info-bulle) à partir du code ussd de la colonne "Code USSD" correspondant aux critères ci-dessous : 
+	- Carrier == Operateur mobile (de la SIM) identifié pendant Etape 1 (Module Auto-discovery)
+	- Action == Consulter
+	- Target == Interne
+	- Scope == In
+2-1-2- Afficher les boutons 
+2-1-3- Au clique, le bouton exectue le code ussd sur le module et Affiche le resultat ( en temps reel )
+
+- Fonction 2-2 : SIM Status Auto-Discovery
+2-2-1- Creer un bouton "SIM Status Auto-Discovery" pour executer de facon automatique pour chaque module SIM800C USB, chaque code ussd de la colonne "Code USSD" correspondant aux critères ci-dessous : 
+	- Carrier == Operateur mobile (de la SIM) identifié pendant Etape 1 (Module Auto-discovery)
+	- Action == Consulter
+	- Target == Interne
+	- Scope == In
+2-2-2- Au clique, le bouton exectue chaque code ussd sur chaque module et Affiche les resultats ou les informations collectés dans le dashboard ( en temps reel )
+
+- Fonction 3-1 : USSD Menu Manual-Discovery
+3-1-1- Pour chaque module SIM800C USB, Afin d'explorer le menu affiché sous chaque code ussd, creer un bouton (inclure une info-bulle) à partir du code ussd de la colonne "Code USSD" correspondant aux critères ci-dessous : 
+	- Carrier == Operateur mobile (de la SIM) identifié pendant Etape 1 (Module Auto-discovery)
+	- Action == Services_N1
+	- Target == Interne
+	- Scope == In
+2-1-2- Afficher les boutons 
+3-1-4- Au clique, Explorer, Enregistrer et Afficher le resultat ou le sous-menu subsequent jusqu'a la fin ( en temps reel ) 
+3-1-5- Mettre à jour ( en temps reel ) la dernière version de Codes_USSD_CI.xlsx, Pour chaque resultat ou menu ou sous-menu subsequent, s'il existe une option dont le code ussd n'existe pas dans la dernière version de Codes_USSD_CI.xlsx, 
+		alors creer une nouvelle version du fichier Codes_USSD_CI.xlsx (exemple : Codes_USSD_CI-v20052026-082405.xlsx) et y ajouter une nouvelle ligne pour enregistrer la nouvelle option
+	
+- Fonction 3-2 : USSD Menu Auto-Discovery
+3-2-1- Creer un bouton "USSD Menu Auto-Discovery", Afin d'explorer le menu affiché sous chaque code ussd, de facon automatique pour chaque module SIM800C USB, chaque code ussd de la colonne "Code USSD" correspondant aux critères ci-dessous : 
+	- Carrier == Operateur mobile (de la SIM) identifié pendant Etape 1 (Module Auto-discovery)
+	- Action == Services_N1
+	- Target == Interne
+	- Scope == In
+3-2-2- Au clique, le bouton exectue chaque code ussd sur chaque module, Explore chauqe menu et le sous-menu subsequent jusqu'a la fin, Enregistrer et Afficher les resultats ( en temps reel ) 
+3-1-3- Mettre à jour la dernière version de Codes_USSD_CI.xlsx, Pour chaque resultat ou menu ou sous-menu subsequent, s'il existe une option dont le code ussd n'existe pas dans la dernière version de Codes_USSD_CI.xlsx, 
+		alors creer une nouvelle version du fichier Codes_USSD_CI.xlsx (exemple : Codes_USSD_CI-v20052026-082405.xlsx) et y ajouter toutes les nouvelles options inexistante
+	
+- Fonction 4 : USSD Manager
+4-1- Saisir manuellement et executer un code USSD sur un module SIM800C USB selectionné
+4-2- Afficher le resultat ( en temps reel )
+
+
+- Fonction 5 : SMS Manager
+5-1- Creer, Lire, Supprimer les SMS sur chaque module SIM800C USB , ( en temps reel )
+5-2- Creer une corbeille et ranger automatiquement dans la corbeille tous les SMS recus qui ne contienent pas le mot "Test" ( en temps reel )
+	
+	
+NB : 
+- Pour l'exploitation du fichier Codes_USSD_CI.xlsx : 
+	-- considerer uniquement les lignes où la colonne Scope == In
+	-- En cas d'execution ou de traitement d'un code ussd où la cellule correspondante de la colonne "Information_INPUT" est different de "Aucun", alors proceder à une validation ou nettoyage des données entrées.
+		Ex: 
+			- Choix : est une nombre valable et present parmis les options du menu 
+			- PIN : est un nombre de 4 chiffres
+			- Code de carte recharge : est un nombre de 14 chiffres
+			- Numero ou numero de téléphone : est un nombre de 10 chiffres (sans indicatif telephonique)
+			- Montant : est un nombre de 2 chiffres ou plus ; nombre >= 50 ;
+			- Référence : est un nombre de 14 chiffres
+
+- Le frontedn sera accessible via test_sim800c.local:80
+- Creer un theme clair et sombre pour le Frontend et creer un bouton pour changer le thème
+- Utilise la commande /polish du skills impeccable (https://github.com/pbakaus/impeccable) pour ameliorer le design du frontend
+

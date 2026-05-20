@@ -1,0 +1,42 @@
+
+------------------------------------------
+Guide d'utilisation du skill GSD (https://github.com/gsd-build/gsd-2) pour executer mon projet decrit dans le fichier C:\xampp\htdocs\aa_Toolbox\test_sim800c\README\project_desc.txt
+Note GSD:
+- Execute le projet decrit ci-dessus en mode auto [@gsd /gsd auto]
+- Fournit le niveau d'autonomie suivant à @gsd sur Git [gsd.approvalMode:"auto-approve"]
+
+------------------------------------------
+
+Task1 - Analyser project_desc.txt fourni en pièce jointe.
+		[
+			stocker les resultats dans : nom de document => 1-analyse_documents_de_description_systeme.md
+		]
+	
+Task2 - Sur la base de toutes reponses precedentes, 
+		Evaluer si il y'a des informations necessaires à l'analyse, la comprehension et la construction du système qui manquent ou qui ne sont pas precises dans la description fournie project_desc.txt
+			Si oui, Lister toutes ces informations par système cible.
+			Sinon, poursuivre sur la tache suivante.
+		Fournir une liste de tous les aspects à prendre en considerations pour la construction du système decrit precedement , afin d'obtenir un resultat plus complet et professionel
+		Fournir egalement , si possible , une liste de fonctionalités detaillées (ainsi que la description detaillée et complete) qui rendront le système , plus complet et professionel
+		[
+			stocker les resultats dans : nom de document => 2-information_additionelle_analyse.md
+		]
+
+Task3 - Sur la base de toutes reponses precedentes, 
+		Faire une proposition de l'architecture ou design (infrastructure et applications) du système cible 
+		Point clé d'architecture ou design de système : performance, rapidité, securité, scalabilité
+		[
+			stocker les resultats dans : 
+				nom de document pour design infrastructure => 3-design_system_infrastructure-v1.md
+				nom de document pour design applications  => 3-design_system_applications-v1.md
+		]
+		
+Task4 - Sur la base de toutes reponses precedentes, 
+		Fournir un Guide d'utilisation du skill GSD (https://github.com/gsd-build/gsd-2) pour executer mon projet
+		Note GSD:
+		- Execute le projet decrit ci-dessus en mode auto [@gsd /gsd auto]
+		- Fournit le niveau d'autonomie suivant à @gsd sur Git [gsd.approvalMode:"auto-approve"]
+		[
+			stocker les resultats dans : 
+				nom de document pour le guide  => 4-guide-gsd-v1.md
+		]

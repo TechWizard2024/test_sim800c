@@ -1,0 +1,6 @@
+Construire le système sur la base des informations fournir dans les fichiers fournis ci-dessous : 
+1 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\README\project_desc.txt
+2 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\chatgpt-analysis\gsd_analysis_docs\1-analyse_documents_de_description_systeme.md
+3 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\chatgpt-analysis\gsd_analysis_docs\3-design_system_applications-v1.md
+4 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\chatgpt-analysis\gsd_analysis_docs\3-design_system_infrastructure-v1.md
+5 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\chatgpt-analysis\gsd_analysis_docs\4-guide-gsd-v1.md

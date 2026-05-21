@@ -25,7 +25,7 @@ echo.
 echo [2/3] Verification de la base de donnees...
 echo.
 
-C:\xampp\mysql\bin\mysql.exe -u sim800c_user -pSIM800c@2026! -e "SELECT 1" sim800c_manager 2>nul
+C:\xampp\mysql\bin\mysql.exe -u sim800c_user -pSIM800c@2026! -e "SELECT 1" sim800c_manager_deepseekv1 2>nul
 if %errorlevel% equ 0 (
     echo   [OK] Base de donnees accessible
 ) else (

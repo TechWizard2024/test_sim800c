@@ -20,16 +20,17 @@ type SMSHandler struct {
 	smsManager    *sms.SMSManager
 }
 
-func NewSMSHandler(serialManager *serial.Manager, db *db.DB, logger *logrus.Logger) *SMSHandler {
-	return &SMSHandler{
+func NewSMSHandler(serialManager *serial.Manager, dbConn *db.DB, logger *logrus.Logger) *SMSHandler {
+	handler := &SMSHandler{
 		serialManager: serialManager,
-		db:            db,
+		db:            dbConn,
 		logger:        logger,
 	}
-}
 
-func (h *SMSHandler) SetSMSManager(smsManager *sms.SMSManager) {
-	h.smsManager = smsManager
+	// Initialiser le SMS Manager
+	handler.smsManager = sms.NewSMSManager(logger, nil, dbConn, "Test")
+
+	return handler
 }
 
 type SendSMSRequest struct {

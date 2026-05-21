@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIM800C Supervisor - Gestion des modules</title>
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/theme-light.css" id="theme-light">
+    <link rel="stylesheet" href="css/theme-dark.css" id="theme-dark" disabled>
+</head>
+<body>
+    <div class="app-container">
+        <!-- En-tête -->
+        <header class="main-header">
+            <div class="logo">
+                <h1>📱 SIM800C Supervisor</h1>
+                <span class="version">v1.0.0</span>
+            </div>
+            <div class="header-controls">
+                <button id="theme-toggle" class="btn-icon" title="Changer de thème">
+                    🌓
+                </button>
+                <button id="refresh-dashboard" class="btn-icon" title="Rafraîchir">
+                    🔄
+                </button>
+                <div class="connection-status">
+                    <span class="status-dot" id="ws-status"></span>
+                    <span id="ws-status-text">Connexion...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="main-nav">
+            <button class="nav-btn active" data-tab="dashboard">
+                📊 Dashboard
+            </button>
+            <button class="nav-btn" data-tab="sms">
+                💬 SMS Manager
+            </button>
+            <button class="nav-btn" data-tab="ussd">
+                🔧 USSD Manager
+            </button>
+            <button class="nav-btn" data-tab="history">
+                📜 Historique
+            </button>
+            <button class="nav-btn" data-tab="settings">
+                ⚙️ Configuration
+            </button>
+        </nav>
+
+        <!-- Contenu principal -->
+        <main class="main-content">
+            <!-- Dashboard -->
+            <div id="dashboard-tab" class="tab-content active">
+                <div class="global-actions">
+                    <button id="auto-status-btn" class="btn-primary">
+                        🚀 SIM Status Auto-Discovery
+                    </button>
+                    <button id="auto-menu-btn" class="btn-primary">
+                        🌲 USSD Menu Auto-Discovery
+                    </button>
+                    <button id="discover-modules-btn" class="btn-secondary">
+                        🔍 Découvrir les modules
+                    </button>
+                </div>
+                
+                <div id="modules-container" class="modules-grid">
+                    <!-- Les modules seront injectés dynamiquement -->
+                    <div class="loading">Chargement des modules...</div>
+                </div>
+            </div>
+
+            <!-- SMS Manager -->
+            <div id="sms-tab" class="tab-content">
+                <div class="sms-header">
+                    <h2>Gestion des SMS</h2>
+                    <button id="new-sms-btn" class="btn-primary">✏️ Nouveau SMS</button>
+                </div>
+                
+                <div class="sms-filters">
+                    <select id="sms-module-select">
+                        <option value="all">Tous les modules</option>
+                    </select>
+                    <input type="text" id="sms-search" placeholder="Rechercher..." class="search-input">
+                    <button id="refresh-sms-btn" class="btn-secondary">🔄 Rafraîchir</button>
+                </div>
+                
+                <div class="sms-tabs">
+                    <button class="sms-tab-btn active" data-sms-tab="inbox">
+                        📥 Boîte de réception
+                        <span id="inbox-count" class="badge">0</span>
+                    </button>
+                    <button class="sms-tab-btn" data-sms-tab="trash">
+                        🗑️ Corbeille
+                        <span id="trash-count" class="badge">0</span>
+                    </button>
+                </div>
+                
+                <div id="sms-inbox" class="sms-list">
+                    <!-- Liste des SMS -->
+                </div>
+                
+                <div id="sms-trash" class="sms-list" style="display: none;">
+                    <!-- Corbeille SMS -->
+                </div>
+            </div>
+
+            <!-- USSD Manager -->
+            <div id="ussd-tab" class="tab-content">
+                <div class="ussd-header">
+                    <h2>Exécuter un code USSD</h2>
+                </div>
+                
+                <div class="ussd-form">
+                    <select id="ussd-module-select" class="module-select">
+                        <option value="">Sélectionner un module</option>
+                    </select>
+                    
+                    <input type="text" id="ussd-code" placeholder="Code USSD (ex: #122#)" class="ussd-input">
+                    
+                    <input type="text" id="ussd-input-data" placeholder="Données d'entrée (optionnel)" class="ussd-input">
+                    
+                    <button id="execute-ussd-btn" class="btn-primary">▶ Exécuter</button>
+                </div>
+                
+                <div id="ussd-result" class="ussd-result">
+                    <h3>Résultat:</h3>
+                    <pre id="ussd-output"></pre>
+                </div>
+                
+                <div class="favorites-section">
+                    <h3>⭐ Codes USSD favoris</h3>
+                    <div id="favorites-list" class="favorites-list">
+                        <!-- Favoris -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Historique -->
+            <div id="history-tab" class="tab-content">
+                <div class="history-header">
+                    <h2>Historique des commandes</h2>
+                    <div class="history-filters">
+                        <select id="history-module-select">
+                            <option value="all">Tous les modules</option>
+                        </select>
+                        <input type="date" id="history-date" class="date-input">
+                        <button id="clear-history-btn" class="btn-danger">🗑️ Vider l'historique</button>
+                    </div>
+                </div>
+                
+                <div id="history-list" class="history-list">
+                    <!-- Historique -->
+                </div>
+            </div>
+
+            <!-- Configuration -->
+            <div id="settings-tab" class="tab-content">
+                <div class="settings-section">
+                    <h3>Configuration des modules</h3>
+                    <div id="modules-config">
+                        <!-- Configuration modules -->
+                    </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h3>Configuration des logs</h3>
+                    <div class="log-controls">
+                        <button id="export-logs-btn" class="btn-secondary">📄 Exporter les logs</button>
+                        <button id="clear-logs-btn" class="btn-danger">🗑️ Vider les logs</button>
+                    </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h3>Base de données</h3>
+                    <button id="backup-db-btn" class="btn-secondary">💾 Sauvegarder la base</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modale Nouveau SMS -->
+    <div id="new-sms-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Envoyer un nouveau SMS</h2>
+            <form id="new-sms-form">
+                <label>Module:</label>
+                <select id="modal-sms-module" required></select>
+                
+                <label>Numéro destinataire:</label>
+                <input type="tel" id="sms-number" placeholder="0701010101" required>
+                
+                <label>Message:</label>
+                <textarea id="sms-message" rows="5" required></textarea>
+                
+                <button type="submit" class="btn-primary">Envoyer</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/websocket.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/sms.js"></script>
+    <script src="js/ussd.js"></script>
+    <script src="js/history.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/theme.js"></script>
+</body>
+</html>

@@ -26,11 +26,6 @@ node -v
 npm -v
 ```
 
-## Installer GSD
-```bash
-npx get-shit-done-cc@latest
-```
-
 # 5. Initialisation projet
 
 ```bash

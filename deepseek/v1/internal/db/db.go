@@ -1,0 +1,315 @@
+package db
+
+import (
+	"database/sql"
+	"fmt"
+	"time"
+
+	"sim800c-supervisor/internal/config"
+
+	_ "github.com/go-sql-driver/mysql"
+)
+
+type Module struct {
+	ID          int       `json:"id"`
+	COMPort     string    `json:"com_port"`
+	IMEI        string    `json:"imei"`
+	PhoneNumber string    `json:"phone_number"`
+	Carrier     string    `json:"carrier"`
+	Status      string    `json:"status"`
+	LastSeen    time.Time `json:"last_seen"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type USSDHistory struct {
+	ID         int       `json:"id"`
+	ModuleID   int       `json:"module_id"`
+	USSSCode   string    `json:"ussd_code"`
+	InputData  string    `json:"input_data"`
+	OutputData string    `json:"output_data"`
+	Status     string    `json:"status"`
+	DurationMs int       `json:"duration_ms"`
+	ExecutedBy string    `json:"executed_by"`
+	ExecutedAt time.Time `json:"executed_at"`
+}
+
+type SMSMessage struct {
+	ID             int       `json:"id"`
+	ModuleID       int       `json:"module_id"`
+	SenderNumber   string    `json:"sender_number"`
+	ReceiverNumber string    `json:"receiver_number"`
+	Message        string    `json:"message"`
+	Direction      string    `json:"direction"`
+	IsDeleted      bool      `json:"is_deleted"`
+	IsTrash        bool      `json:"is_trash"`
+	SMSIndex       int       `json:"sms_index"`
+	ReceivedAt     time.Time `json:"received_at"`
+}
+
+type DB struct {
+	*sql.DB
+}
+
+func InitDB(cfg *config.Config) (*DB, error) {
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		cfg.MySQL.User, cfg.MySQL.Password, cfg.MySQL.Host, cfg.MySQL.Port, cfg.MySQL.Database)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("erreur ouverture DB: %w", err)
+	}
+
+	db.SetMaxOpenConns(cfg.MySQL.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.MySQL.MaxIdleConns)
+	db.SetConnMaxLifetime(time.Duration(cfg.MySQL.ConnMaxLifetimeMinutes) * time.Minute)
+
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("erreur ping DB: %w", err)
+	}
+
+	if err := createTables(db); err != nil {
+		return nil, fmt.Errorf("erreur création tables: %w", err)
+	}
+
+	return &DB{db}, nil
+}
+
+func createTables(db *sql.DB) error {
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS modules (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			com_port VARCHAR(10) NOT NULL UNIQUE,
+			imei VARCHAR(15),
+			phone_number VARCHAR(20),
+			carrier VARCHAR(50),
+			status ENUM('connected', 'disconnected', 'error') DEFAULT 'disconnected',
+			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_status (status)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS ussd_history (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			module_id INT NOT NULL,
+			ussd_code VARCHAR(50) NOT NULL,
+			input_data TEXT,
+			output_data TEXT,
+			status ENUM('success', 'error', 'timeout') NOT NULL,
+			duration_ms INT,
+			executed_by VARCHAR(50) DEFAULT 'system',
+			executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE,
+			INDEX idx_module (module_id),
+			INDEX idx_executed_at (executed_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS sms_messages (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			module_id INT NOT NULL,
+			sender_number VARCHAR(20),
+			receiver_number VARCHAR(20),
+			message TEXT NOT NULL,
+			direction ENUM('in', 'out') NOT NULL,
+			is_deleted BOOLEAN DEFAULT FALSE,
+			is_trash BOOLEAN DEFAULT FALSE,
+			sms_index INT,
+			received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE,
+			INDEX idx_module_direction (module_id, direction),
+			INDEX idx_received_at (received_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS audit_log (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			user_id VARCHAR(50),
+			action VARCHAR(100) NOT NULL,
+			target_type VARCHAR(50),
+			target_id INT,
+			details JSON,
+			ip_address VARCHAR(45),
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_user (user_id),
+			INDEX idx_created_at (created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS excel_versions (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			filename VARCHAR(255) NOT NULL,
+			version_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_by VARCHAR(50) DEFAULT 'system',
+			new_codes_count INT DEFAULT 0
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+	}
+
+	for _, query := range queries {
+		if _, err := db.Exec(query); err != nil {
+			return fmt.Errorf("erreur exécution requête: %w\nRequête: %s", err, query)
+		}
+	}
+
+	return nil
+}
+
+// GetModuleByCOMPort - Récupère un module par son port COM
+func (db *DB) GetModuleByCOMPort(comPort string) (*Module, error) {
+	query := `SELECT id, com_port, imei, phone_number, carrier, status, last_seen, created_at 
+			  FROM modules WHERE com_port = ?`
+
+	row := db.QueryRow(query, comPort)
+
+	var module Module
+	err := row.Scan(&module.ID, &module.COMPort, &module.IMEI, &module.PhoneNumber,
+		&module.Carrier, &module.Status, &module.LastSeen, &module.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &module, nil
+}
+
+// SaveModule - Sauvegarde un module
+func (db *DB) SaveModule(module *Module) error {
+	query := `INSERT INTO modules (com_port, imei, phone_number, carrier, status, last_seen) 
+			  VALUES (?, ?, ?, ?, ?, NOW())
+			  ON DUPLICATE KEY UPDATE 
+			  imei = VALUES(imei), phone_number = VALUES(phone_number), 
+			  carrier = VALUES(carrier), status = VALUES(status), last_seen = NOW()`
+
+	_, err := db.Exec(query, module.COMPort, module.IMEI, module.PhoneNumber, module.Carrier, module.Status)
+	return err
+}
+
+// GetAllModules - Récupère tous les modules
+func (db *DB) GetAllModules() ([]Module, error) {
+	query := `SELECT id, com_port, imei, phone_number, carrier, status, last_seen, created_at 
+			  FROM modules ORDER BY id`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var modules []Module
+	for rows.Next() {
+		var module Module
+		err := rows.Scan(&module.ID, &module.COMPort, &module.IMEI, &module.PhoneNumber,
+			&module.Carrier, &module.Status, &module.LastSeen, &module.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		modules = append(modules, module)
+	}
+
+	return modules, nil
+}
+
+// SaveUSSDHistory - Sauvegarde l'historique USSD
+func (db *DB) SaveUSSDHistory(history *USSDHistory) error {
+	query := `INSERT INTO ussd_history (module_id, ussd_code, input_data, output_data, status, duration_ms, executed_by) 
+			  VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := db.Exec(query, history.ModuleID, history.USSSCode, history.InputData,
+		history.OutputData, history.Status, history.DurationMs, history.ExecutedBy)
+	if err != nil {
+		return err
+	}
+
+	id, _ := result.LastInsertId()
+	history.ID = int(id)
+	return nil
+}
+
+// GetUSSDHistory - Récupère l'historique USSD
+func (db *DB) GetUSSDHistory(moduleID int, limit int) ([]USSDHistory, error) {
+	query := `SELECT id, module_id, ussd_code, input_data, output_data, status, duration_ms, executed_by, executed_at 
+			  FROM ussd_history WHERE module_id = ? ORDER BY executed_at DESC LIMIT ?`
+
+	rows, err := db.Query(query, moduleID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []USSDHistory
+	for rows.Next() {
+		var h USSDHistory
+		err := rows.Scan(&h.ID, &h.ModuleID, &h.USSSCode, &h.InputData, &h.OutputData,
+			&h.Status, &h.DurationMs, &h.ExecutedBy, &h.ExecutedAt)
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, h)
+	}
+
+	return history, nil
+}
+
+// SaveSMS - Sauvegarde un SMS
+func (db *DB) SaveSMS(sms *SMSMessage) error {
+	query := `INSERT INTO sms_messages (module_id, sender_number, receiver_number, message, direction, is_deleted, is_trash, sms_index) 
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := db.Exec(query, sms.ModuleID, sms.SenderNumber, sms.ReceiverNumber,
+		sms.Message, sms.Direction, sms.IsDeleted, sms.IsTrash, sms.SMSIndex)
+	if err != nil {
+		return err
+	}
+
+	id, _ := result.LastInsertId()
+	sms.ID = int(id)
+	return nil
+}
+
+// GetSMSByModule - Récupère les SMS d'un module
+func (db *DB) GetSMSByModule(moduleID int, includeTrash bool) ([]SMSMessage, error) {
+	var query string
+	var rows *sql.Rows
+	var err error
+
+	if includeTrash {
+		query = `SELECT id, module_id, sender_number, receiver_number, message, direction, is_deleted, is_trash, sms_index, received_at 
+				 FROM sms_messages WHERE module_id = ? ORDER BY received_at DESC`
+		rows, err = db.Query(query, moduleID)
+	} else {
+		query = `SELECT id, module_id, sender_number, receiver_number, message, direction, is_deleted, is_trash, sms_index, received_at 
+				 FROM sms_messages WHERE module_id = ? AND is_trash = FALSE ORDER BY received_at DESC`
+		rows, err = db.Query(query, moduleID)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var smsList []SMSMessage
+	for rows.Next() {
+		var sms SMSMessage
+		err := rows.Scan(&sms.ID, &sms.ModuleID, &sms.SenderNumber, &sms.ReceiverNumber,
+			&sms.Message, &sms.Direction, &sms.IsDeleted, &sms.IsTrash, &sms.SMSIndex, &sms.ReceivedAt)
+		if err != nil {
+			return nil, err
+		}
+		smsList = append(smsList, sms)
+	}
+
+	return smsList, nil
+}
+
+// MarkSMSDeleted - Marque un SMS comme supprimé
+func (db *DB) MarkSMSDeleted(moduleID int, smsIndex int) error {
+	query := `UPDATE sms_messages SET is_deleted = TRUE WHERE module_id = ? AND sms_index = ?`
+	_, err := db.Exec(query, moduleID, smsIndex)
+	return err
+}
+
+// MoveSMSToTrash - Déplace un SMS vers la corbeille
+func (db *DB) MoveSMSToTrash(smsID int) error {
+	query := `UPDATE sms_messages SET is_trash = TRUE WHERE id = ?`
+	_, err := db.Exec(query, smsID)
+	return err
+}

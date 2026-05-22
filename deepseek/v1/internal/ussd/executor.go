@@ -76,10 +76,13 @@ func (e *USSDExecutor) Execute(req *USSDRequest) (*USSDResponse, error) {
 }
 
 func (e *USSDExecutor) ExecuteWithMenu(req *USSDRequest, choice string) (*USSDResponse, error) {
-	// Pour les menus USSD, on envoie le choix après le code initial
-	fullCode := fmt.Sprintf("%s%s", req.Code, choice)
-	req.Code = fullCode
-	return e.Execute(req)
+	// Navigation USSD: le module attend souvent d'envoyer uniquement le choix ("1", "2", ...)
+	// après l'affichage du menu initial.
+	// Donc: on exécute le choix seul en utilisant AT+CUSD avec InputData = choice.
+	// Ici on met le choix dans Code, car Execute envoie AT+CUSD=...,"<Code>",15.
+	reqCopy := *req
+	reqCopy.Code = choice
+	return e.Execute(&reqCopy)
 }
 
 func (e *USSDExecutor) ParseMenuResponse(response string) []MenuOption {

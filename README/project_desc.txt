@@ -92,7 +92,214 @@ NB :
 			- Montant : est un nombre de 2 chiffres ou plus ; nombre >= 50 ;
 			- Référence : est un nombre de 14 chiffres
 
-- Le frontend sera accessible via test_sim800c.local:80
+- Le frontend sera accessible via test_sim800c.local:8082
 - Creer un theme clair et sombre pour le Frontend et creer un bouton pour changer le thème
+
+
+
+
+Analyser et adapter l'ensemble du projet afin prendre en consideration les informations ci-dessous :
+- Adapter le projet pour qu'il puisse prendre en charge x nombre ou n'importe quel nombre de module SIM800C (meme si on n'a pas une connaissance préalable du port COM auquel le module SIM800C est connecté)
+- Resultat sur COM5 via Putty: 
+---------- Debut Resultat sur COM5 via Putty ------------------------
+AT
+OK
+AT+CUSD=1
+OK
+AT+CUSD=1,"#99#",15
+ERROR
+AT+CUSD=1,"*99#",15
+ERROR
+AT+CUSD=1,"#111#",15
+ERROR
+AT+CUSD=1,"*#06#",15
+ERROR
+AT+CREG?
++CREG: 0,0
+
+OK
+AT+CGREG?
++CGREG: 0,0
+
+OK
+AT+CSQ
++CSQ: 29,0
+
+OK
+AT+CPIN?
++CPIN: SIM PIN
+
+OK
+AT+CUSD?
++CUSD: 1
+
+OK
+AT+CUSD=1,"#99#",15
+ERROR
+AT+CUSD=1,"*99#",15
+ERROR
+AT+CUSD=1,"*#99#",15
+ERROR
+ATD*99#;
+ERROR
+AT+COPS?
++CPIN: SIM PIN
+
+OK
+
++CREG: 0,0
+
+OK
+
++CSQ: 29,0
+
+OK
+AT+COPS?
+ERROR
+
+
+
+AT+CPIN="0000"
+OK
+
++CPIN: READY
+
+Call Ready
+
+SMS Ready
+AT+CREG?
++CREG: 0,1
+
+OK
+AT+CUSD=1,"#99#",15
+OK
+
+2250778943515", 15
+AT+CUSD=1,"*111#",15
+OK
+
++CUSD: 2
+AT+CUSD=1,"#111#",15
+OK
+
++CUSD: 1,"Bienvenue au #111#
+
+                            1: Acheter un Pass
+                                              2: Consulter mes soldes
+                                                                     3: Renouveler un Pass
+          4: Acheter et rembourser du cr▒dit via OM
+                                                   5: Pass surprise
+                                                                   6: Roaming
+                                                                             7: WAW MUZIK
+         ...
+            8:-->", 15
+
++CUSD: 2
+AT+CUSD=1,"#122#",15
+OK
+
++CUSD: 1,"Compte principal = 60F valable jusqu'au 22/05/2026.
+                                                             Conso:40F
+                                                                      1.Voir mes bonus
+      Wahou! 1Go=500F.Avec Megawin,tente de gagner 5millions Cash.RDV au #111*1226#", 15
+
++CUSD: 2
+
+---------- Fin Resultat sur COM5 via Putty ------------------------
+
+Notes : 
+1- Lorsqu'une carte SIM est inséré pour dans un module SIM800C , dans certain cas le module SIM800C requiert un code PIN avant d'executer les codes USSD autrement les codes USSD echouent.
+	En d'autre terme, dans un cas d'echec d'un code USSD , verifier si le probleme n'est lié à un verrouillage par code PIN
+	Les code PIN par defaut selon les operateurs sont:
+	Orange CI => 0000
+	MTN CI => 12345
+	Moov Africa CI => 0101
+	
+2- Au regarde du resultat de l'execution d'un exemple de code [AT+CUSD=1,"#122#",15] classé comme [Action == Consulter dans le fichier excel Codes_USSD_CI.xlsx]  , 
+	Il sera necessaire de faire une mise en forme du texte du menu founi
+	
+3- Au regarde du resultat de l'execution d'un exemple de code [AT+CUSD=1,"#111#",15] classé comme [Action == Services_N1 dans le fichier excel Codes_USSD_CI.xlsx]  , 
+	Il sera necessaire de faire une mise en forme du texte du menu founi
+
+
+4- Resultat de la navigation dans le menu #111# sur COM5 via Putty: 
+------------- Debut Note Point Numero 4 ----------------------------
+
+AT+CUSD=1,"#111#",15
+OK
+
++CUSD: 1,"Bienvenue au #111#
+
+                            1: Acheter un Pass
+                                              2: Consulter mes soldes
+                                                                     3: Renouveler un Pass
+          4: Acheter et rembourser du cr▒dit via OM
+                                                   5: Pass surprise
+                                                                   6: Roaming
+                                                                             7: WAW MUZIK
+         ...
+            8:-->", 15
+AT+CUSD=1,"2",15
+
+
+OK
+
++CUSD: 1,"Compte principal = 60F
+                                 Valable jusqu'au 22/05/2026
+                                                            Conso: 40F
+
+                                                                      1: Pass Mix
+ 2: Pass Internet
+                 3: Pass Inter
+                              4: Pass Roaming
+                                             5: Mes bonus
+                                                         6: Pass KDO
+                                                                    7: Mobile Pro
+ - - -
+      0:Retour", 15
+AT+CUSD=1,"2",15
+
+
+OK
+
++CUSD: 1,"Vous ne disposez pas de Pass. Veuillez svp taper 1 pour souscrire et b▒n▒ficier des avantages.
+                        1: Acheter un Pass
+                                          - - -
+                                               0:Retour
+                                                       00:Accueil ", 15
+AT+CUSD=1,"1",15
+
+
+OK
+
++CUSD: 1,"Choisissez votre Pass Internet
+
+                                        1:Pass r▒seaux sociaux
+                                                              2:Pass 1 ▒ 3 jours
+                                                                               3:Pass 5 ▒ 7 jours
+                 4:Pass Mois
+                            5:Pass Nuit
+                                       6:Pass Data +
+                                                    7: Pass surprise
+                                                                    - - -
+                                                                         0:Retour
+ 00:Accueil", 15
+
+
+Notes:
+Exemple d'etapes à suivre Pour naviguer dans un menu USSD ( exemple le menu #111# ) 
+Avec SIM800C, il faut souvent répondre en moins de 5 secondes
+
+Étape 1
+=> AT+CUSD=1,"#111#",15
+Étape 2 (répondre rapidement)
+=> AT+CUSD=1,"2",15
+Étape 3 (répondre rapidement)
+=> AT+CUSD=1,"2",15
+Étape 4 (répondre rapidement)
+=> AT+CUSD=1,"1",15
+
+
+------------- Fin Note Point Numero 4 ----------------------------
 
 

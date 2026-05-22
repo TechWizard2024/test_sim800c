@@ -112,26 +112,30 @@ func (e *USSDExplorer) ExploreMenu(module *serial.SIM800C, startCode string, par
 
 func (e *USSDExplorer) exploreSubMenu(module *serial.SIM800C, option MenuOption, parentCode string, depth int, parentID int) (*MenuNode, []excel.USSDCode, error) {
 	if depth >= e.maxDepth {
+		// Dans le mode B, le choix n'est pas concaténé au code USSD.
 		return &MenuNode{
-			Code:        fmt.Sprintf("%s%s", parentCode, option.Number),
+			Code:        parentCode,
 			Description: option.Text,
 			Depth:       depth,
 			ParentID:    parentID,
 		}, nil, nil
 	}
 
-	// Construire le code USSD complet
-	fullCode := fmt.Sprintf("%s%s", parentCode, option.Number)
-
-	// Vérifier si le code existe déjà dans l'Excel
-	exists, existingCode := e.excelReader.GetByUSSDCode(fullCode)
-
+	// Mode B : le module attend le choix séparé ("1", "2", ...)
+	// - on exécute le menu parentCode puis on envoie l'entrée option.Number.
+	// Ici on explore le sous-menu en envoyant option.Number comme choice.
 	var discoveredCodes []excel.USSDCode
 
+	// On utilise comme "USSDCode" la séquence parentCode + "[choice]" pour repérer
+	// des items distincts sans fabriquer une concaténation invalide.
+	// Comme la spec dit USSD_Code structure, on conserve parentCode et on stocke le choix dans Operation.
+	usCodeKey := parentCode
+	// Déduplication basée sur USSDCode existant.
+	exists, existingCode := e.excelReader.GetByUSSDCode(usCodeKey)
+
 	if !exists {
-		// Nouveau code découvert
 		newCode := excel.USSDCode{
-			USSDCode:     fullCode,
+			USSDCode:     usCodeKey,
 			Operation:    option.Text,
 			Action:       "Services_N2",
 			Target:       "Interne",
@@ -139,35 +143,30 @@ func (e *USSDExplorer) exploreSubMenu(module *serial.SIM800C, option MenuOption,
 			ParentUSSDID: parentID,
 		}
 		discoveredCodes = append(discoveredCodes, newCode)
+		_ = existingCode
 	}
 
 	node := &MenuNode{
-		Code:        fullCode,
+		Code:        parentCode,
 		Description: option.Text,
 		Depth:       depth,
 		ParentID:    parentID,
 	}
 
-	// Exécuter le sous-menu
-	req := &USSDRequest{
-		Module: module,
-		Code:   fullCode,
-	}
-
-	response, err := e.executor.Execute(req)
+	// Exécuter le sous-menu en envoyant le choix.
+	response, err := e.executor.ExecuteWithMenu(&USSDRequest{Module: module, Code: parentCode, ModuleID: module.ModuleID}, option.Number)
 	if err != nil {
-		e.logger.Warnf("Erreur exécution sous-menu %s: %v", fullCode, err)
+		e.logger.Warnf("Erreur exécution sous-menu choice=%s parent=%s: %v", option.Number, parentCode, err)
 		node.Options = []MenuOption{}
 		return node, discoveredCodes, nil
 	}
 
-	// Analyser les options du sous-menu
 	subOptions := e.executor.ParseMenuResponse(response.Result)
 	node.Options = subOptions
 
-	// Explorer récursivement
+	// Explorer récursivement : le parentCode reste identique (mode B navigue dans la même session)
 	for _, subOption := range subOptions {
-		childNode, childDiscovered, err := e.exploreSubMenu(module, subOption, fullCode, depth+1, existingCode.ID)
+		childNode, childDiscovered, err := e.exploreSubMenu(module, subOption, parentCode, depth+1, existingCode.ID)
 		if err != nil {
 			continue
 		}

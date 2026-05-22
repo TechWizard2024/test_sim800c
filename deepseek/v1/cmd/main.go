@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"sim800c-supervisor/internal/api/handlers"
 	"sim800c-supervisor/internal/auth"
 	"sim800c-supervisor/internal/config"
 	"sim800c-supervisor/internal/db"
@@ -125,10 +126,9 @@ func main() {
 	apiRouter.HandleFunc("/excel/reload", reloadExcelHandler(excelReader, logger)).Methods("POST")
 	apiRouter.HandleFunc("/excel/versions", getExcelVersionsHandler(dbConn, logger)).Methods("GET")
 
-	// WebSocket
-	apiRouter.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "WebSocket handler not implemented", http.StatusNotImplemented)
-	}).Methods("GET")
+	// WebSocket (auth JWT via Authorization header)
+	wsHandler := handlers.NewWebSocketHandler(hub, logger, authManager)
+	apiRouter.HandleFunc("/ws", wsHandler.HandleWebSocket).Methods("GET")
 
 	// Configurer CORS
 	corsHandler := cors.New(cors.Options{

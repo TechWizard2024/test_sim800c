@@ -28,10 +28,17 @@ type SIM800C struct {
 	PhoneNumber string
 	IMEI        string
 	Carrier     string
-	mu          sync.Mutex
+
+	mu sync.Mutex
+
+	// Single reader state (refactor Objectif_1)
+	readerStarted bool
+	rb             *syncReadBuffer
+
 	commandChan chan Command
 	stopChan    chan struct{}
 }
+
 
 type Command struct {
 	Type       string      `json:"type"`
@@ -94,7 +101,7 @@ func (m *Manager) connectModule(port string) {
 	// Initialiser le module
 	go module.initialize()
 	go module.handleCommands()
-	go module.readResponses()
+	// TODO: supprimer readResponses() et basculer vers une lecture unifiée dans sim800c.go
 
 	m.logger.Infof("Module connecté sur %s", port)
 

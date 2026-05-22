@@ -52,7 +52,6 @@ func NewAuthManager(dbConn *db.DB, cfg *config.Config, logger *logrus.Logger) *A
 }
 
 func (a *AuthManager) CreateDefaultAdmin() {
-	// Vérifier si l'admin existe déjà
 	exists, _ := a.db.UserExists("admin")
 	if exists {
 		return
@@ -69,9 +68,9 @@ func (a *AuthManager) CreateDefaultAdmin() {
 
 	if err := a.db.CreateUser(user); err != nil {
 		a.logger.Warnf("Erreur création admin: %v", err)
-	} else {
-		a.logger.Info("Utilisateur admin créé (mot de passe: admin123)")
+		return
 	}
+	a.logger.Info("Utilisateur admin créé (mot de passe: admin123)")
 }
 
 func (a *AuthManager) LoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +80,6 @@ func (a *AuthManager) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vérifier les identifiants
 	user, err := a.db.GetUserByUsername(req.Username)
 	if err != nil {
 		http.Error(w, "Identifiants invalides", http.StatusUnauthorized)
@@ -93,18 +91,17 @@ func (a *AuthManager) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Générer le token JWT
 	token, err := a.generateToken(user)
 	if err != nil {
 		http.Error(w, "Erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	// Journaliser la connexion
-	a.db.SaveAuditLog(user.ID, "login", "user", user.ID, map[string]string{"ip": r.RemoteAddr}, r.RemoteAddr)
+	// target_id est un int dans la DB (schema actuel). On log avec 0.
+	_ = a.db.SaveAuditLog(user.ID, "login", "user", 0, map[string]string{"ip": r.RemoteAddr}, r.RemoteAddr)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(LoginResponse{
+	_ = json.NewEncoder(w).Encode(LoginResponse{
 		Token:    token,
 		UserID:   user.ID,
 		Username: user.Username,
@@ -113,9 +110,8 @@ func (a *AuthManager) LoginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *AuthManager) LogoutHandler(w http.ResponseWriter, r *http.Request) {
-	// Pour JWT, le logout est géré côté client
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "déconnecté"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "déconnecté"})
 }
 
 func (a *AuthManager) generateToken(user *db.User) (string, error) {
@@ -135,43 +131,39 @@ func (a *AuthManager) generateToken(user *db.User) (string, error) {
 	return token.SignedString(a.jwtSecret)
 }
 
-func (a *AuthManager) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// AuthMiddlewareMux est compatible avec router.Use(...) de Gorilla/mux.
+func (a *AuthManager) AuthMiddlewareMux(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !a.cfg.Security.EnableAuth {
-			next(w, r)
+			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Extraire le token du header
 		tokenString := r.Header.Get("Authorization")
 		if tokenString == "" {
 			http.Error(w, "Token manquant", http.StatusUnauthorized)
 			return
 		}
 
-		// Enlever le préfixe "Bearer "
 		if len(tokenString) > 7 && tokenString[:7] == "Bearer " {
 			tokenString = tokenString[7:]
 		}
 
-		// Vérifier le token
 		claims := &Claims{}
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			return a.jwtSecret, nil
 		})
-
 		if err != nil || !token.Valid {
 			http.Error(w, "Token invalide", http.StatusUnauthorized)
 			return
 		}
 
-		// Ajouter les infos utilisateur dans le contexte
 		r.Header.Set("X-User-ID", claims.UserID)
 		r.Header.Set("X-Username", claims.Username)
 		r.Header.Set("X-User-Role", claims.Role)
 
-		next(w, r)
-	}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (a *AuthManager) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +180,7 @@ func (a *AuthManager) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":         user.ID,
 		"username":   user.Username,
 		"role":       user.Role,
@@ -212,7 +204,6 @@ func (a *AuthManager) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vérifier l'ancien mot de passe
 	user, err := a.db.GetUserByID(userID)
 	if err != nil {
 		http.Error(w, "Utilisateur non trouvé", http.StatusNotFound)
@@ -224,7 +215,6 @@ func (a *AuthManager) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Changer le mot de passe
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), a.cfg.Security.BcryptCost)
 	if err != nil {
 		http.Error(w, "Erreur interne", http.StatusInternalServerError)
@@ -236,32 +226,28 @@ func (a *AuthManager) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.db.SaveAuditLog(userID, "change_password", "user", userID, nil, r.RemoteAddr)
+	_ = a.db.SaveAuditLog(userID, "change_password", "user", 0, nil, r.RemoteAddr)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "Mot de passe modifié"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "Mot de passe modifié"})
 }
 
 func generateSessionToken() string {
 	bytes := make([]byte, 32)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
 
-// ValidateToken - Valide un token JWT et retourne les claims
 func (a *AuthManager) ValidateToken(tokenString string) (*Claims, error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return a.jwtSecret, nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
 	if !token.Valid {
 		return nil, fmt.Errorf("token invalide")
 	}
-
 	return claims, nil
 }

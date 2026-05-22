@@ -96,7 +96,7 @@ func main() {
 	apiRouter.HandleFunc("/logout", authManager.LogoutHandler).Methods("POST")
 
 	// Routes protégées
-	apiRouter.Use(authManager.AuthMiddleware)
+	apiRouter.Use(authManager.AuthMiddlewareMux)
 
 	// Modules
 	apiRouter.HandleFunc("/modules", getModulesHandler(serialManager, logger)).Methods("GET")
@@ -126,7 +126,9 @@ func main() {
 	apiRouter.HandleFunc("/excel/versions", getExcelVersionsHandler(dbConn, logger)).Methods("GET")
 
 	// WebSocket
-	apiRouter.HandleFunc("/ws", websocket.NewHandler(hub, logger)).Methods("GET")
+	apiRouter.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "WebSocket handler not implemented", http.StatusNotImplemented)
+	}).Methods("GET")
 
 	// Configurer CORS
 	corsHandler := cors.New(cors.Options{

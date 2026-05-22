@@ -68,7 +68,8 @@ func (h *SMSHandler) SendSMS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.smsManager.SendSMS(targetModule, req.Number, req.Message); err != nil {
+	if err := h.smsManager.SendSMS(moduleID, req.Number, req.Message); err != nil {
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -132,7 +133,8 @@ func (h *SMSHandler) DeleteSMS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.smsManager.DeleteSMS(targetModule, index); err != nil {
+	if err := h.smsManager.DeleteSMS(moduleID, index); err != nil {
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -153,7 +155,8 @@ func (h *SMSHandler) MoveToTrash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.smsManager.MoveToTrash(nil, smsID); err != nil {
+	if err := h.smsManager.MoveToTrash(smsID); err != nil {
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

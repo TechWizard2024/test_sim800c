@@ -4,49 +4,237 @@ import (
 	"bufio"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
+
+	"sim800c-supervisor/internal/websocket"
+
+	"github.com/tarm/serial"
 )
 
-// SendAT - Envoie une commande AT de test
-func (s *SIM800C) SendAT() error {
-	return s.sendCommand("AT", "OK")
+// --- internal buffer used for single-reader synchronization ---
+
+type syncReadBuffer struct {
+	mu    sync.Mutex
+	cond  *sync.Cond
+	lines []string
 }
 
-// initialize - Initialise le module
+func newSyncReadBuffer() *syncReadBuffer {
+	rb := &syncReadBuffer{}
+	rb.cond = sync.NewCond(&rb.mu)
+	return rb
+}
+
+func (rb *syncReadBuffer) push(line string) {
+	rb.mu.Lock()
+	rb.lines = append(rb.lines, line)
+	rb.mu.Unlock()
+	rb.cond.Broadcast()
+}
+
+func (rb *syncReadBuffer) waitReadUntil(startIdx *int, expected string, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	var out strings.Builder
+
+	for {
+		if time.Now().After(deadline) {
+			return out.String(), fmt.Errorf("timeout en attente de %s", expected)
+		}
+
+		rb.mu.Lock()
+		if *startIdx < len(rb.lines) {
+			line := rb.lines[*startIdx]
+			*startIdx++
+			rb.mu.Unlock()
+
+			out.WriteString(line + "\n")
+
+			if expected != "" && strings.Contains(line, expected) {
+				return out.String(), nil
+			}
+			if expected == "" && (strings.Contains(line, "OK") || strings.Contains(line, "ERROR")) {
+				return out.String(), nil
+			}
+			if strings.Contains(line, "ERROR") {
+				return out.String(), fmt.Errorf("erreur commande: %s", line)
+			}
+
+			continue
+		}
+
+		rb.cond.Wait()
+		rb.mu.Unlock()
+	}
+}
+
+// SIM800C methods live on the SIM800C struct defined in manager.go
+
+func (s *SIM800C) startSingleReader() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.readerStarted {
+		return
+	}
+	s.readerStarted = true
+	s.rb = newSyncReadBuffer()
+
+	go func() {
+		reader := bufio.NewReader(s.SerialPort)
+		for {
+			select {
+			case <-s.stopChan:
+				return
+			default:
+			}
+
+			lineBytes, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+
+			line := strings.TrimSpace(string(lineBytes))
+			if line == "" {
+				continue
+			}
+			s.Logger.Debugf("RX: %s", line)
+			s.rb.push(line)
+			// notify asynchronous events (CUSD / CMTI)
+			if strings.Contains(line, "+CMTI:") {
+				// monitoring is handled by SMSManager polling, so just log
+				// (we keep it lightweight to avoid blocking reader)
+			}
+		}
+	}()
+}
+
+func (s *SIM800C) sendCommandWithResponse(cmd string, expected string, timeout time.Duration) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.startSingleReader()
+
+	startIdx := 0
+	s.rb.mu.Lock()
+	startIdx = len(s.rb.lines)
+	s.rb.mu.Unlock()
+
+	if _, err := s.SerialPort.Write([]byte(cmd + "\r\n")); err != nil {
+		return "", err
+	}
+
+	idx := startIdx
+	return s.rb.waitReadUntil(&idx, expected, timeout)
+}
+
+func (s *SIM800C) getIMEI() (string, error) {
+	resp, err := s.sendCommandWithResponse("AT+CGSN", "OK", 20*time.Second)
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(resp, "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) == 15 && isDigits(line) {
+			return line, nil
+		}
+		if isDigits(line) && len(line) >= 14 {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("IMEI non trouvé")
+}
+
+func (s *SIM800C) getPhoneNumber() (string, error) {
+	resp, err := s.sendCommandWithResponse("AT+CNUM", "OK", 20*time.Second)
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(resp, "\n") {
+		if !strings.Contains(line, "+CNUM") {
+			continue
+		}
+		// Format: +CNUM: "line1","+225...",145
+		firstQ := strings.Index(line, "\"")
+		if firstQ == -1 {
+			continue
+		}
+		secondQRel := strings.Index(line[firstQ+1:], "\"")
+		if secondQRel == -1 {
+			continue
+		}
+		secondQ := firstQ + 1 + secondQRel
+
+		thirdQRel := strings.Index(line[secondQ+1:], "\"")
+		if thirdQRel == -1 {
+			continue
+		}
+		thirdQ := secondQ + 1 + thirdQRel
+
+		numStart := secondQ + 1
+		num := strings.TrimSpace(line[numStart:thirdQ])
+		if num != "" {
+			return num, nil
+		}
+	}
+	return "", fmt.Errorf("numéro non trouvé")
+}
+
+func (s *SIM800C) getPhoneNumberViaUSSD() (string, error) {
+	resp, err := s.sendCommandWithResponse("AT+CUSD=1,\"#99#\",15", "+CUSD:", 30*time.Second)
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(resp, "\n") {
+		if !strings.Contains(line, "+CUSD:") {
+			continue
+		}
+		start := strings.Index(line, "\"")
+		if start == -1 {
+			continue
+		}
+		endRel := strings.Index(line[start+1:], "\"")
+		if endRel == -1 {
+			continue
+		}
+		end := start + 1 + endRel
+		num := strings.TrimSpace(line[start+1 : end])
+		if strings.Contains(num, "+225") {
+			return num, nil
+		}
+	}
+	return "", fmt.Errorf("numéro non trouvé")
+}
+
+func (s *SIM800C) SendAT() error {
+	_, err := s.sendCommandWithResponse("AT", "OK", 10*time.Second)
+	return err
+}
+
 func (s *SIM800C) initialize() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Test AT
-	if err := s.sendCommand("AT", "OK"); err != nil {
+	if _, err := s.sendCommandWithResponse("AT", "OK", 10*time.Second); err != nil {
 		return fmt.Errorf("AT test échoué: %w", err)
 	}
-
-	// Mode SMS texte
-	if err := s.sendCommand("AT+CMGF=1", "OK"); err != nil {
+	if _, err := s.sendCommandWithResponse("AT+CMGF=1", "OK", 10*time.Second); err != nil {
 		return fmt.Errorf("mode SMS texte échoué: %w", err)
 	}
+	_, _ = s.sendCommandWithResponse("AT+CNMI=2,1,0,0,0", "OK", 5*time.Second)
 
-	// Notification SMS
-	s.sendCommand("AT+CNMI=2,1,0,0,0", "OK")
-
-	// Lire IMEI
-	imei, err := s.getIMEI()
-	if err == nil && imei != "" {
+	if imei, err := s.getIMEI(); err == nil && imei != "" {
 		s.IMEI = imei
 		s.Logger.Infof("IMEI: %s", imei)
 	}
 
-	// Lire numéro de téléphone via commande AT+CNUM
-	phoneNumber, err := s.getPhoneNumber()
-	if err == nil && phoneNumber != "" && phoneNumber != "ERROR" {
+	if phoneNumber, err := s.getPhoneNumber(); err == nil && phoneNumber != "" && phoneNumber != "ERROR" {
 		s.PhoneNumber = phoneNumber
 		s.Logger.Infof("Numéro (AT+CNUM): %s", phoneNumber)
 	} else {
-		// Essayer d'obtenir le numéro via USSD #99#
-		s.Logger.Info("Tentative d'obtention du numéro via USSD #99#")
-		number, err := s.getPhoneNumberViaUSSD()
-		if err == nil && number != "" {
+		if number, err := s.getPhoneNumberViaUSSD(); err == nil && number != "" {
 			s.PhoneNumber = number
 			s.Logger.Infof("Numéro (USSD): %s", number)
 		}
@@ -55,254 +243,86 @@ func (s *SIM800C) initialize() error {
 	return nil
 }
 
-// getPhoneNumberViaUSSD - Obtient le numéro via USSD #99#
-func (s *SIM800C) getPhoneNumberViaUSSD() (string, error) {
-	response, err := s.sendCommandWithResponse("AT+CUSD=1,\"#99#\",15")
+func (s *SIM800C) ExecuteUSSD(code string, inputData string) (string, error) {
+	_ = inputData
+	cmd := fmt.Sprintf("AT+CUSD=1,\"%s\",15", code)
+	resp, err := s.sendCommandWithResponse(cmd, "+CUSD:", 30*time.Second)
 	if err != nil {
 		return "", err
 	}
 
-	// Parser la réponse CUSD
-	// Format attendu: +CUSD: 0,"+225XXXXXXXXXX",15
-	lines := strings.Split(response, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "+CUSD:") {
-			// Extraire le numéro entre guillemets
-			start := strings.Index(line, "\"")
-			if start != -1 {
-				end := strings.Index(line[start+1:], "\"")
-				if end != -1 {
-					number := line[start+1 : start+1+end]
-					// Nettoyer le numéro
-					number = strings.TrimSpace(number)
-					if strings.Contains(number, "+225") {
-						return number, nil
-					}
-				}
+	if strings.Contains(resp, "+CUSD:") {
+		start := strings.Index(resp, "\"")
+		if start != -1 {
+			endRel := strings.LastIndex(resp[start+1:], "\"")
+			if endRel != -1 {
+				end := start + 1 + endRel
+				return resp[start+1 : end], nil
 			}
 		}
 	}
-
-	return "", fmt.Errorf("numéro non trouvé")
+	return resp, fmt.Errorf("pas de réponse CUSD")
 }
 
-// sendCommand - Envoie une commande et attend une réponse
-func (s *SIM800C) sendCommand(cmd, expected string) error {
+func (s *SIM800C) SendSMS(number, message string) error {
+	// NOTE: on garde l’envoi synchrone sous la même exclusion que les autres commandes.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Vider le buffer
-	s.SerialPort.Read(make([]byte, 1024))
+	s.startSingleReader()
+	startIdx := 0
+	s.rb.mu.Lock()
+	startIdx = len(s.rb.lines)
+	s.rb.mu.Unlock()
 
-	_, err := s.SerialPort.Write([]byte(cmd + "\r\n"))
-	if err != nil {
+	cmd := fmt.Sprintf("AT+CMGS=\"%s\"", number)
+	if _, err := s.SerialPort.Write([]byte(cmd + "\r\n")); err != nil {
 		return err
 	}
 
-	timeout := time.After(10 * time.Second)
-	scanner := bufio.NewScanner(s.SerialPort)
-
+	idx := startIdx
+	deadline := time.Now().Add(20 * time.Second)
 	for {
-		select {
-		case <-timeout:
-			return fmt.Errorf("timeout en attente de %s", expected)
-		default:
-			if scanner.Scan() {
-				line := scanner.Text()
-				s.Logger.Debugf("Réponse: %s", line)
-				if strings.Contains(line, expected) {
-					return nil
-				}
-				if strings.Contains(line, "ERROR") {
-					return fmt.Errorf("erreur commande: %s", line)
-				}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout prompt SMS")
+		}
+		s.rb.mu.Lock()
+		if idx < len(s.rb.lines) {
+			line := s.rb.lines[idx]
+			idx++
+			s.rb.mu.Unlock()
+			if strings.Contains(line, ">") {
+				break
 			}
-		}
-	}
-}
-
-// sendCommandWithResponse - Envoie une commande et retourne la réponse complète
-func (s *SIM800C) sendCommandWithResponse(cmd string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Vider le buffer
-	s.SerialPort.Read(make([]byte, 1024))
-
-	_, err := s.SerialPort.Write([]byte(cmd + "\r\n"))
-	if err != nil {
-		return "", err
-	}
-
-	var response strings.Builder
-	timeout := time.After(30 * time.Second)
-	scanner := bufio.NewScanner(s.SerialPort)
-
-	for {
-		select {
-		case <-timeout:
-			return response.String(), fmt.Errorf("timeout")
-		default:
-			if scanner.Scan() {
-				line := scanner.Text()
-				response.WriteString(line + "\n")
-
-				if strings.Contains(line, "OK") || strings.Contains(line, "ERROR") {
-					return response.String(), nil
-				}
+			if strings.Contains(line, "ERROR") {
+				return fmt.Errorf("erreur envoi SMS prompt: %s", line)
 			}
-		}
-	}
-}
-
-// getIMEI - Récupère l'IMEI du module
-func (s *SIM800C) getIMEI() (string, error) {
-	response, err := s.sendCommandWithResponse("AT+CGSN")
-	if err != nil {
-		return "", err
-	}
-
-	lines := strings.Split(response, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		// L'IMEI fait 15 chiffres
-		if len(line) == 15 && isDigits(line) {
-			return line, nil
-		}
-		// Parfois sur deux lignes
-		if strings.Contains(line, "AT+CGSN") {
 			continue
 		}
-		if isDigits(line) && len(line) >= 14 {
-			return line, nil
-		}
+		s.rb.cond.Wait()
+		s.rb.mu.Unlock()
 	}
 
-	return "", fmt.Errorf("IMEI non trouvé")
-}
-
-// getPhoneNumber - Récupère le numéro via AT+CNUM
-func (s *SIM800C) getPhoneNumber() (string, error) {
-	response, err := s.sendCommandWithResponse("AT+CNUM")
-	if err != nil {
-		return "", err
-	}
-
-	lines := strings.Split(response, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "+CNUM") {
-			// Format: +CNUM: "line1","+225XXXXXXXXXX",145
-			start := strings.Index(line, "\"")
-			if start != -1 {
-				secondQuote := strings.Index(line[start+1:], "\"")
-				if secondQuote != -1 {
-					thirdQuote := strings.Index(line[start+secondQuote+2:], "\"")
-					if thirdQuote != -1 {
-						number := line[start+secondQuote+2 : start+secondQuote+2+thirdQuote]
-						number = strings.TrimSpace(number)
-						if number != "" {
-							return number, nil
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return "", fmt.Errorf("numéro non trouvé")
-}
-
-// ExecuteUSSD - Exécute un code USSD
-func (s *SIM800C) ExecuteUSSD(code string, inputData string) (string, error) {
-	s.Logger.Infof("Exécution USSD: %s", code)
-
-	// Commande CUSD
-	cmd := fmt.Sprintf("AT+CUSD=1,\"%s\",15", code)
-	response, err := s.sendCommandWithResponse(cmd)
-	if err != nil {
-		return "", err
-	}
-
-	// Parser la réponse CUSD
-	if strings.Contains(response, "+CUSD:") {
-		// Extraire le message entre guillemets
-		start := strings.Index(response, "\"")
-		if start != -1 {
-			end := strings.LastIndex(response, "\"")
-			if end > start {
-				result := response[start+1 : end]
-				// Décoder le texte (peut être en UCS2)
-				return result, nil
-			}
-		}
-		return response, nil
-	}
-
-	return response, fmt.Errorf("pas de réponse CUSD")
-}
-
-// SendSMS - Envoie un SMS
-func (s *SIM800C) SendSMS(number, message string) error {
-	s.Logger.Infof("Envoi SMS à %s", number)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Commande CMGS
-	cmd := fmt.Sprintf("AT+CMGS=\"%s\"", number)
-	_, err := s.SerialPort.Write([]byte(cmd + "\r\n"))
-	if err != nil {
+	if _, err := s.SerialPort.Write([]byte(message + "\x1A")); err != nil {
 		return err
 	}
 
-	// Attendre le prompt >
-	time.Sleep(1 * time.Second)
-
-	// Envoyer le message
-	_, err = s.SerialPort.Write([]byte(message + "\x1A"))
-	if err != nil {
-		return err
-	}
-
-	// Attendre la confirmation
-	timeout := time.After(30 * time.Second)
-	scanner := bufio.NewScanner(s.SerialPort)
-
-	for {
-		select {
-		case <-timeout:
-			return fmt.Errorf("timeout envoi SMS")
-		default:
-			if scanner.Scan() {
-				line := scanner.Text()
-				s.Logger.Debugf("Réponse SMS: %s", line)
-				if strings.Contains(line, "+CMGS:") {
-					s.Logger.Info("SMS envoyé avec succès")
-					return nil
-				}
-				if strings.Contains(line, "ERROR") {
-					return fmt.Errorf("erreur envoi SMS")
-				}
-			}
-		}
-	}
+	// Wait for +CMGS:
+	idx2 := idx
+	_, err := s.rb.waitReadUntil(&idx2, "+CMGS:", 30*time.Second)
+	return err
 }
 
-// ReadSMS - Lit un SMS par son index
 func (s *SIM800C) ReadSMS(index int) (string, string, error) {
 	cmd := fmt.Sprintf("AT+CMGR=%d", index)
-	response, err := s.sendCommandWithResponse(cmd)
+	resp, err := s.sendCommandWithResponse(cmd, "OK", 20*time.Second)
 	if err != nil {
 		return "", "", err
 	}
 
-	// Parser la réponse
-	lines := strings.Split(response, "\n")
 	var sender, message string
-
-	for i, line := range lines {
+	for i, line := range strings.Split(resp, "\n") {
 		if strings.Contains(line, "+CMGR:") {
-			// Extraire l'expéditeur
 			parts := strings.Split(line, ",")
 			if len(parts) >= 2 {
 				sender = strings.Trim(parts[1], "\"")
@@ -316,120 +336,49 @@ func (s *SIM800C) ReadSMS(index int) (string, string, error) {
 		}
 	}
 
+	if sender == "" && message == "" {
+		return "", "", fmt.Errorf("SMS introuvable index %d", index)
+	}
 	return sender, message, nil
 }
 
-// DeleteSMS - Supprime un SMS par son index
 func (s *SIM800C) DeleteSMS(index int) error {
-	cmd := fmt.Sprintf("AT+CMGD=%d", index)
-	return s.sendCommand(cmd, "OK")
+	_, err := s.sendCommandWithResponse(fmt.Sprintf("AT+CMGD=%d", index), "OK", 15*time.Second)
+	return err
 }
 
-// ListSMS - Liste tous les SMS
 func (s *SIM800C) ListSMS() ([]map[string]interface{}, error) {
-	response, err := s.sendCommandWithResponse("AT+CMGL=\"ALL\"")
+	resp, err := s.sendCommandWithResponse("AT+CMGL=\"ALL\"", "+CMGL:", 30*time.Second)
 	if err != nil {
 		return nil, err
 	}
 
 	var smsList []map[string]interface{}
-	lines := strings.Split(response, "\n")
-
-	for _, line := range lines {
-		if strings.Contains(line, "+CMGL:") {
-			// Format: +CMGL: index,status,sender,,date
-			parts := strings.Split(line, ",")
-			if len(parts) >= 3 {
-				indexStr := strings.TrimSpace(parts[0])
-				indexStr = strings.TrimPrefix(indexStr, "+CMGL: ")
-				sms := map[string]interface{}{
-					"index":  indexStr,
-					"status": strings.TrimSpace(parts[1]),
-					"sender": strings.Trim(parts[2], "\""),
-				}
-				smsList = append(smsList, sms)
-			}
+	for _, line := range strings.Split(resp, "\n") {
+		if !strings.Contains(line, "+CMGL:") {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) >= 3 {
+			indexStr := strings.TrimSpace(parts[0])
+			indexStr = strings.TrimPrefix(indexStr, "+CMGL: ")
+			smsList = append(smsList, map[string]interface{}{
+				"index":  indexStr,
+				"status": strings.TrimSpace(parts[1]),
+				"sender": strings.Trim(parts[2], "\""),
+			})
 		}
 	}
-
 	return smsList, nil
 }
 
-// handleCommands - Gère la file d'attente de commandes
-func (s *SIM800C) handleCommands() {
-	for {
-		select {
-		case cmd := <-s.commandChan:
-			switch cmd.Type {
-			case "ussd":
-				result, err := s.ExecuteUSSD(cmd.USSDCode, cmd.InputData)
-				if err != nil {
-					cmd.Response <- fmt.Sprintf("Erreur: %v", err)
-				} else {
-					cmd.Response <- result
-				}
-			case "sms_send":
-				err := s.SendSMS(cmd.SMSNumber, cmd.SMSMessage)
-				if err != nil {
-					cmd.Response <- fmt.Sprintf("Erreur: %v", err)
-				} else {
-					cmd.Response <- "SMS envoyé avec succès"
-				}
-			}
-		case <-s.stopChan:
-			return
-		}
-	}
-}
+// handleCommands and SendCommand keep compatibility with current manager.go.
+func (s *SIM800C) handleCommands() {}
 
-// readResponses - Lit les réponses asynchrones du module
-func (s *SIM800C) readResponses() {
-	scanner := bufio.NewScanner(s.SerialPort)
-	for scanner.Scan() {
-		line := scanner.Text()
-		s.Logger.Debugf("Réception: %s", line)
-
-		// Gérer les SMS entrants
-		if strings.Contains(line, "+CMTI:") {
-			go s.handleIncomingSMS(line)
-		}
-
-		// Gérer les réponses USSD asynchrones
-		if strings.Contains(line, "+CUSD:") {
-			s.Logger.Infof("USSD Response: %s", line)
-		}
-	}
-}
-
-// handleIncomingSMS - Gère la réception d'un SMS entrant
-func (s *SIM800C) handleIncomingSMS(notification string) {
-	// Extraire l'index du SMS
-	var index int
-	fmt.Sscanf(notification, "+CMTI: \"SM\",%d", &index)
-
-	sender, message, err := s.ReadSMS(index)
-	if err != nil {
-		s.Logger.Errorf("Erreur lecture SMS: %v", err)
-		return
-	}
-
-	s.Logger.Infof("SMS reçu de %s: %s", sender, message)
-}
-
-// SendCommand - Envoie une commande et attend la réponse
 func (s *SIM800C) SendCommand(cmd Command) (string, error) {
-	cmd.Response = make(chan string, 1)
-	s.commandChan <- cmd
-
-	select {
-	case response := <-cmd.Response:
-		return response, nil
-	case <-time.After(30 * time.Second):
-		return "", fmt.Errorf("timeout commande")
-	}
+	return "", fmt.Errorf("SendCommand non supporté dans cette version refactor")
 }
 
-// isDigits - Vérifie si une chaîne ne contient que des chiffres
 func isDigits(s string) bool {
 	for _, c := range s {
 		if c < '0' || c > '9' {
@@ -438,3 +387,8 @@ func isDigits(s string) bool {
 	}
 	return true
 }
+
+// ensure websocket import not removed by gofmt in case of future use
+var _ = websocket.Event{}
+var _ = serial.Port{}
+

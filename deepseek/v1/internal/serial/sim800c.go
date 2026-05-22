@@ -28,25 +28,62 @@ func (s *SIM800C) initialize() error {
 	}
 
 	// Notification SMS
-	if err := s.sendCommand("AT+CNMI=2,1,0,0,0", "OK"); err != nil {
-		s.Logger.Warnf("Configuration notification SMS échouée: %v", err)
-	}
+	s.sendCommand("AT+CNMI=2,1,0,0,0", "OK")
 
 	// Lire IMEI
 	imei, err := s.getIMEI()
-	if err == nil {
+	if err == nil && imei != "" {
 		s.IMEI = imei
 		s.Logger.Infof("IMEI: %s", imei)
 	}
 
-	// Lire numéro de téléphone
+	// Lire numéro de téléphone via commande AT+CNUM
 	phoneNumber, err := s.getPhoneNumber()
-	if err == nil {
+	if err == nil && phoneNumber != "" && phoneNumber != "ERROR" {
 		s.PhoneNumber = phoneNumber
-		s.Logger.Infof("Numéro: %s", phoneNumber)
+		s.Logger.Infof("Numéro (AT+CNUM): %s", phoneNumber)
+	} else {
+		// Essayer d'obtenir le numéro via USSD #99#
+		s.Logger.Info("Tentative d'obtention du numéro via USSD #99#")
+		number, err := s.getPhoneNumberViaUSSD()
+		if err == nil && number != "" {
+			s.PhoneNumber = number
+			s.Logger.Infof("Numéro (USSD): %s", number)
+		}
 	}
 
 	return nil
+}
+
+// getPhoneNumberViaUSSD - Obtient le numéro via USSD #99#
+func (s *SIM800C) getPhoneNumberViaUSSD() (string, error) {
+	response, err := s.sendCommandWithResponse("AT+CUSD=1,\"#99#\",15")
+	if err != nil {
+		return "", err
+	}
+
+	// Parser la réponse CUSD
+	// Format attendu: +CUSD: 0,"+225XXXXXXXXXX",15
+	lines := strings.Split(response, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "+CUSD:") {
+			// Extraire le numéro entre guillemets
+			start := strings.Index(line, "\"")
+			if start != -1 {
+				end := strings.Index(line[start+1:], "\"")
+				if end != -1 {
+					number := line[start+1 : start+1+end]
+					// Nettoyer le numéro
+					number = strings.TrimSpace(number)
+					if strings.Contains(number, "+225") {
+						return number, nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("numéro non trouvé")
 }
 
 // sendCommand - Envoie une commande et attend une réponse
@@ -54,7 +91,10 @@ func (s *SIM800C) sendCommand(cmd, expected string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, err := s.SerialPort.Write([]byte(cmd + "\r"))
+	// Vider le buffer
+	s.SerialPort.Read(make([]byte, 1024))
+
+	_, err := s.SerialPort.Write([]byte(cmd + "\r\n"))
 	if err != nil {
 		return err
 	}
@@ -69,6 +109,7 @@ func (s *SIM800C) sendCommand(cmd, expected string) error {
 		default:
 			if scanner.Scan() {
 				line := scanner.Text()
+				s.Logger.Debugf("Réponse: %s", line)
 				if strings.Contains(line, expected) {
 					return nil
 				}
@@ -85,7 +126,10 @@ func (s *SIM800C) sendCommandWithResponse(cmd string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, err := s.SerialPort.Write([]byte(cmd + "\r"))
+	// Vider le buffer
+	s.SerialPort.Read(make([]byte, 1024))
+
+	_, err := s.SerialPort.Write([]byte(cmd + "\r\n"))
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +165,15 @@ func (s *SIM800C) getIMEI() (string, error) {
 	lines := strings.Split(response, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
+		// L'IMEI fait 15 chiffres
 		if len(line) == 15 && isDigits(line) {
+			return line, nil
+		}
+		// Parfois sur deux lignes
+		if strings.Contains(line, "AT+CGSN") {
+			continue
+		}
+		if isDigits(line) && len(line) >= 14 {
 			return line, nil
 		}
 	}
@@ -129,23 +181,29 @@ func (s *SIM800C) getIMEI() (string, error) {
 	return "", fmt.Errorf("IMEI non trouvé")
 }
 
-// getPhoneNumber - Récupère le numéro de téléphone
+// getPhoneNumber - Récupère le numéro via AT+CNUM
 func (s *SIM800C) getPhoneNumber() (string, error) {
 	response, err := s.sendCommandWithResponse("AT+CNUM")
 	if err != nil {
 		return "", err
 	}
 
-	// Parse +CNUM response
 	lines := strings.Split(response, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "+CNUM") {
-			// Extract phone number between quotes
+			// Format: +CNUM: "line1","+225XXXXXXXXXX",145
 			start := strings.Index(line, "\"")
 			if start != -1 {
-				end := strings.Index(line[start+1:], "\"")
-				if end != -1 {
-					return line[start+1 : start+1+end], nil
+				secondQuote := strings.Index(line[start+1:], "\"")
+				if secondQuote != -1 {
+					thirdQuote := strings.Index(line[start+secondQuote+2:], "\"")
+					if thirdQuote != -1 {
+						number := line[start+secondQuote+2 : start+secondQuote+2+thirdQuote]
+						number = strings.TrimSpace(number)
+						if number != "" {
+							return number, nil
+						}
+					}
 				}
 			}
 		}
@@ -165,14 +223,16 @@ func (s *SIM800C) ExecuteUSSD(code string, inputData string) (string, error) {
 		return "", err
 	}
 
-	// Parser la réponse
+	// Parser la réponse CUSD
 	if strings.Contains(response, "+CUSD:") {
 		// Extraire le message entre guillemets
 		start := strings.Index(response, "\"")
 		if start != -1 {
 			end := strings.LastIndex(response, "\"")
 			if end > start {
-				return response[start+1 : end], nil
+				result := response[start+1 : end]
+				// Décoder le texte (peut être en UCS2)
+				return result, nil
 			}
 		}
 		return response, nil
@@ -190,13 +250,13 @@ func (s *SIM800C) SendSMS(number, message string) error {
 
 	// Commande CMGS
 	cmd := fmt.Sprintf("AT+CMGS=\"%s\"", number)
-	_, err := s.SerialPort.Write([]byte(cmd + "\r"))
+	_, err := s.SerialPort.Write([]byte(cmd + "\r\n"))
 	if err != nil {
 		return err
 	}
 
 	// Attendre le prompt >
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	// Envoyer le message
 	_, err = s.SerialPort.Write([]byte(message + "\x1A"))
@@ -215,6 +275,7 @@ func (s *SIM800C) SendSMS(number, message string) error {
 		default:
 			if scanner.Scan() {
 				line := scanner.Text()
+				s.Logger.Debugf("Réponse SMS: %s", line)
 				if strings.Contains(line, "+CMGS:") {
 					s.Logger.Info("SMS envoyé avec succès")
 					return nil
@@ -248,7 +309,10 @@ func (s *SIM800C) ReadSMS(index int) (string, string, error) {
 			}
 		}
 		if i > 0 && !strings.Contains(line, "+CMGR:") && !strings.Contains(line, "OK") && !strings.Contains(line, "ERROR") {
-			message = strings.TrimSpace(line)
+			line = strings.TrimSpace(line)
+			if line != "" {
+				message = line
+			}
 		}
 	}
 
@@ -328,6 +392,11 @@ func (s *SIM800C) readResponses() {
 		// Gérer les SMS entrants
 		if strings.Contains(line, "+CMTI:") {
 			go s.handleIncomingSMS(line)
+		}
+
+		// Gérer les réponses USSD asynchrones
+		if strings.Contains(line, "+CUSD:") {
+			s.Logger.Infof("USSD Response: %s", line)
 		}
 	}
 }

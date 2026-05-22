@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8082
   websocket_path: "/ws"
   api_path: "/api"
   read_timeout_seconds: 30
@@ -11,19 +11,15 @@ serial:
     - "COM6"
     - "COM7"
   baud_rate: 9600
-  data_bits: 8
-  stop_bits: 1
-  parity: "N"
   timeout_seconds: 30
   reconnect_delay_seconds: 5
-  max_retries: 3
   command_queue_size: 100
 
 mysql:
   host: "localhost"
   port: 3306
-  user: "sim800c_user"
-  password: "SIM800c@2026!"
+  user: "root"
+  password: ""
   database: "sim800c_manager_deepseekv1"
   max_open_conns: 25
   max_idle_conns: 10
@@ -33,39 +29,23 @@ excel:
   base_path: "C:/xampp/htdocs/aa_Toolbox/test_sim800c/deepseek/v1/storage/excel"
   filename_pattern: "Codes_USSD_CI*.xlsx"
   reload_interval_minutes: 5
-  backup_enabled: true
-  max_versions: 50
 
 ussd:
   max_menu_depth: 10
   session_timeout_seconds: 60
-  default_choice_timeout_seconds: 5
   explore_delay_ms: 1000
-  retry_on_error: true
-  max_retries: 2
 
 sms:
   auto_trash_keyword: "Test"
   max_sms_per_module: 500
   check_interval_seconds: 10
-  storage_mode: "database"  # database or both
 
 security:
-  jwt_secret: "SIM800c-Supervisor-Secret-Key-2026!@#"
+  jwt_secret: "SIM800c-Supervisor-Secret-Key-2026"
   jwt_expiration_hours: 24
-  encryption_key: "0123456789abcdef0123456789abcdef"  # 32 bytes for AES-256
-  enable_auth: false  # Set to true for multi-user
+  enable_auth: true
   bcrypt_cost: 12
 
 logging:
-  level: "info"  # debug, info, warn, error
+  level: "info"
   output_path: "storage/logs/app.log"
-  max_size_mb: 100
-  max_backups: 10
-  max_age_days: 30
-
-monitoring:
-  enabled: true
-  check_interval_seconds: 30
-  alert_on_disconnect: true
-  alert_on_error_threshold: 5

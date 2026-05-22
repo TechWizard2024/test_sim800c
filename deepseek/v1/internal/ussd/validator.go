@@ -92,7 +92,7 @@ func (v *InputValidator) ValidateInput(ussdCode, input string) error {
 			return fmt.Errorf("erreur validation: %w", err)
 		}
 		if !matched {
-			return fmt.Errorf(rule.Message)
+			return fmt.Errorf("%s", rule.Message)
 		}
 	}
 
@@ -103,7 +103,7 @@ func (v *InputValidator) ValidateInput(ussdCode, input string) error {
 			return fmt.Errorf("le montant doit être un nombre")
 		}
 		if value < rule.Min {
-			return fmt.Errorf(rule.Message)
+			return fmt.Errorf("%s", rule.Message)
 		}
 	}
 

@@ -1,7 +1,9 @@
 package db
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -49,6 +51,40 @@ type SMSMessage struct {
 type DB struct {
 	*sql.DB
 }
+
+// Added 21052026-2002
+// User structure
+type User struct {
+	ID           string    `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"-"`
+	Role         string    `json:"role"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// ExcelVersion structure
+type ExcelVersion struct {
+	ID            int       `json:"id"`
+	Filename      string    `json:"filename"`
+	VersionDate   time.Time `json:"version_date"`
+	CreatedBy     string    `json:"created_by"`
+	NewCodesCount int       `json:"new_codes_count"`
+}
+
+// AuditLog structure
+type AuditLog struct {
+	ID         int                    `json:"id"`
+	UserID     string                 `json:"user_id"`
+	Action     string                 `json:"action"`
+	TargetType string                 `json:"target_type"`
+	TargetID   int                    `json:"target_id"`
+	Details    map[string]interface{} `json:"details"`
+	IPAddress  string                 `json:"ip_address"`
+	CreatedAt  time.Time              `json:"created_at"`
+}
+
+//
+// Added 21052026-2002
 
 func InitDB(cfg *config.Config) (*DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
@@ -313,3 +349,130 @@ func (db *DB) MoveSMSToTrash(smsID int) error {
 	_, err := db.Exec(query, smsID)
 	return err
 }
+
+//
+// Added 21052026-2002
+
+// UserExists - Vérifie si un utilisateur existe
+func (db *DB) UserExists(username string) (bool, error) {
+	var count int
+	query := "SELECT COUNT(*) FROM users WHERE username = ?"
+	err := db.QueryRow(query, username).Scan(&count)
+	return count > 0, err
+}
+
+// CreateUser - Crée un nouvel utilisateur
+func (db *DB) CreateUser(user *User) error {
+	user.ID = generateUUID()
+	query := "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)"
+	_, err := db.Exec(query, user.ID, user.Username, user.PasswordHash, user.Role, user.CreatedAt)
+	return err
+}
+
+// GetUserByUsername - Récupère un utilisateur par son nom
+func (db *DB) GetUserByUsername(username string) (*User, error) {
+	query := "SELECT id, username, password_hash, role, created_at FROM users WHERE username = ?"
+	row := db.QueryRow(query, username)
+
+	var user User
+	err := row.Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Role, &user.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetUserByID - Récupère un utilisateur par son ID
+func (db *DB) GetUserByID(id string) (*User, error) {
+	query := "SELECT id, username, password_hash, role, created_at FROM users WHERE id = ?"
+	row := db.QueryRow(query, id)
+
+	var user User
+	err := row.Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Role, &user.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// UpdateUserPassword - Met à jour le mot de passe d'un utilisateur
+func (db *DB) UpdateUserPassword(userID, newHash string) error {
+	query := "UPDATE users SET password_hash = ? WHERE id = ?"
+	_, err := db.Exec(query, newHash, userID)
+	return err
+}
+
+// SaveAuditLog - Sauvegarde un log d'audit
+func (db *DB) SaveAuditLog(userID, action, targetType string, targetID int, details interface{}, ipAddress string) error {
+	query := "INSERT INTO audit_log (user_id, action, target_type, target_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)"
+	_, err := db.Exec(query, userID, action, targetType, targetID, details, ipAddress)
+	return err
+}
+
+// GetAuditLogs - Récupère les logs d'audit
+func (db *DB) GetAuditLogs(limit int) ([]AuditLog, error) {
+	query := "SELECT id, user_id, action, target_type, target_id, details, ip_address, created_at FROM audit_log ORDER BY created_at DESC LIMIT ?"
+	rows, err := db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []AuditLog
+	for rows.Next() {
+		var log AuditLog
+		var detailsJSON []byte
+		err := rows.Scan(&log.ID, &log.UserID, &log.Action, &log.TargetType, &log.TargetID, &detailsJSON, &log.IPAddress, &log.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		json.Unmarshal(detailsJSON, &log.Details)
+		logs = append(logs, log)
+	}
+	return logs, nil
+}
+
+// SMSExists - Vérifie si un SMS existe déjà
+func (db *DB) SMSExists(moduleID, smsIndex int) (bool, error) {
+	var count int
+	query := "SELECT COUNT(*) FROM sms_messages WHERE module_id = ? AND sms_index = ?"
+	err := db.QueryRow(query, moduleID, smsIndex).Scan(&count)
+	return count > 0, err
+}
+
+// GetExcelVersions - Récupère les versions du fichier Excel
+func (db *DB) GetExcelVersions() ([]ExcelVersion, error) {
+	query := "SELECT id, filename, version_date, created_by, new_codes_count FROM excel_versions ORDER BY version_date DESC"
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var versions []ExcelVersion
+	for rows.Next() {
+		var v ExcelVersion
+		err := rows.Scan(&v.ID, &v.Filename, &v.VersionDate, &v.CreatedBy, &v.NewCodesCount)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, nil
+}
+
+// SaveExcelVersion - Sauvegarde une nouvelle version Excel
+func (db *DB) SaveExcelVersion(filename, createdBy string, newCodesCount int) error {
+	query := "INSERT INTO excel_versions (filename, created_by, new_codes_count) VALUES (?, ?, ?)"
+	_, err := db.Exec(query, filename, createdBy, newCodesCount)
+	return err
+}
+
+func generateUUID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+//
+// Added 21052026-2002

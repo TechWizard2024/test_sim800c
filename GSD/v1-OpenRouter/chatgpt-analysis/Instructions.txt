@@ -1,34 +1,13 @@
-Construire le système sur la base des informations fournir dans les fichiers fournis ci-dessous : 
-1 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\README\project_desc.txt
-2 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\chatgpt-analysis\gsd_analysis_docs\1-analyse_documents_de_description_systeme.md
-3 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\chatgpt-analysis\gsd_analysis_docs\3-design_system_applications-v1.md
-4 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\chatgpt-analysis\gsd_analysis_docs\3-design_system_infrastructure-v1.md
-5 - C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\chatgpt-analysis\gsd_analysis_docs\4-guide-any-ai-v1.md
+Construire l'ensemble du projet ou l'ensemble du système sur la base des informations fournir dans les fichiers ci-dessous : 
 
-----------------------------
+	- C:\xampp\htdocs\aa_Toolbox\test_sim800c\README\project_desc.txt
 
-Construire l'ensemble du projet ou l'ensemble du système sur la base des informations fournir dans les fichiers fournis précédemment et les fichiers générés précédemment : 
+	- C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\claude-analysis\gsd_analysis_docs\1-analyse_documents_de_description_systeme.md
 
-	- project_desc.txt
+	- C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\claude-analysis\gsd_analysis_docs\3-design_system_applications-v1.md
 
-	- 1-analyse_documents_de_description_systeme.md
-
-	- 3-design_system_applications-v1.md
-
-	- 3-design_system_infrastructure-v1.md
-
-	- 4-guide-gsd-v1.md
-
-Générer l'ensemble du projet dans un fichier .zip accompagné d'un guide de déploiement pour mon environnement local (incluant toute les prérequis ou dépendances nécessaires ainsi que la procédure d'installation pour chaque prérequis ou dépendance)
+	- C:\xampp\htdocs\aa_Toolbox\test_sim800c\GSD\v1-OpenRouter\claude-analysis\gsd_analysis_docs\3-design_system_infrastructure-v1.md
 
 
-----------------------------
+Générer un guide de déploiement pour mon environnement local (incluant toute les prérequis ou dépendances nécessaires ainsi que la procédure d'installation pour chaque prérequis ou dépendance)
 
-Construire l'ensemble du projet ou l'ensemble du système sur la base des informations fournir dans les fichiers fournis précédemment et les fichiers générés précédemment 
-
-Générer l'ensemble du projet dans un fichier .zip accompagné d'un guide de déploiement pour mon environnement local (incluant toute les prérequis ou dépendances nécessaires ainsi que la procédure d'installation pour chaque prérequis ou dépendance)
-
------------
-
-Fournir un script pour générer automatiquement la structure complète
-Pour correction : Le code généré sera stocké dans C:\xampp\htdocs\aa_Toolbox\test_sim800c\deepseek\v1

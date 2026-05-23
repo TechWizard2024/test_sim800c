@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -116,6 +117,10 @@ func main() {
 
 	// USSD
 	apiRouter.HandleFunc("/modules/{id:[0-9]+}/ussd/execute", executeUSSDHandler(serialManager, dbConn, ussdExecutor, logger)).Methods("POST")
+	// Update 23052026-0937
+	apiRouter.HandleFunc("/modules/{id:[0-9]+}/ussd/status-codes", statusCodesHandler(serialManager, excelReader, logger)).Methods("GET")
+	apiRouter.HandleFunc("/modules/{id:[0-9]+}/ussd/menu-codes", menuCodesHandler(serialManager, excelReader, logger)).Methods("GET")
+	// Update 23052026-0937
 	apiRouter.HandleFunc("/ussd/auto-status", autoStatusHandler(serialManager, excelReader, ussdExecutor, logger)).Methods("POST")
 	apiRouter.HandleFunc("/ussd/auto-menu", autoMenuHandler(serialManager, excelReader, ussdExplorer, logger)).Methods("POST")
 	apiRouter.HandleFunc("/ussd/explore/{id:[0-9]+}/{code}", exploreMenuHandler(serialManager, ussdExplorer, logger)).Methods("POST")
@@ -547,6 +552,80 @@ func reloadExcelHandler(reader *excel.ExcelReader, logger *logrus.Logger) http.H
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "Excel rechargé"})
+	}
+}
+
+func statusCodesHandler(sm *serial.Manager, reader *excel.ExcelReader, logger *logrus.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			http.Error(w, "ID invalide", http.StatusBadRequest)
+			return
+		}
+
+		var carrier string
+		for _, module := range sm.GetAllModules() {
+			if module.ModuleID == id {
+				carrier = module.Carrier
+				break
+			}
+		}
+
+		codes := reader.GetConsultCodes(carrier)
+		result := make([]map[string]interface{}, 0, len(codes))
+		for _, c := range codes {
+			result = append(result, map[string]interface{}{
+				"id":          c.ID,
+				"carrier":     c.Carrier,
+				"action":      c.Action,
+				"target":      c.Target,
+				"operation":   c.Operation,
+				"ussd_code":   c.USSDCode,
+				"info_input":  c.InformationINPUT,
+				"info_output": c.InformationOUTPUT,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	}
+}
+
+func menuCodesHandler(sm *serial.Manager, reader *excel.ExcelReader, logger *logrus.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			http.Error(w, "ID invalide", http.StatusBadRequest)
+			return
+		}
+
+		var carrier string
+		for _, module := range sm.GetAllModules() {
+			if module.ModuleID == id {
+				carrier = module.Carrier
+				break
+			}
+		}
+
+		codes := reader.GetServiceNCodes(carrier)
+		result := make([]map[string]interface{}, 0, len(codes))
+		for _, c := range codes {
+			result = append(result, map[string]interface{}{
+				"id":          c.ID,
+				"carrier":     c.Carrier,
+				"action":      c.Action,
+				"target":      c.Target,
+				"operation":   c.Operation,
+				"ussd_code":   c.USSDCode,
+				"info_input":  c.InformationINPUT,
+				"info_output": c.InformationOUTPUT,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
 	}
 }
 

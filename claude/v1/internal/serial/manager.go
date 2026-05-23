@@ -1,6 +1,8 @@
 package serial
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -8,7 +10,7 @@ import (
 	"sim800c-supervisor/internal/websocket"
 
 	"github.com/sirupsen/logrus"
-	"github.com/tarm/serial"
+	tserial "github.com/tarm/serial"
 )
 
 type Manager struct {
@@ -22,7 +24,7 @@ type Manager struct {
 
 type SIM800C struct {
 	Port        string
-	SerialPort  *serial.Port
+	SerialPort  *tserial.Port
 	Logger      *logrus.Logger
 	ModuleID    int
 	PhoneNumber string
@@ -31,14 +33,13 @@ type SIM800C struct {
 
 	mu sync.Mutex
 
-	// Single reader state (refactor Objectif_1)
+	// Single reader state
 	readerStarted bool
-	rb             *syncReadBuffer
+	rb            *syncReadBuffer
 
 	commandChan chan Command
 	stopChan    chan struct{}
 }
-
 
 type Command struct {
 	Type       string      `json:"type"`
@@ -59,37 +60,127 @@ func NewManager(cfg *config.Config, logger *logrus.Logger, hub *websocket.Hub) *
 	}
 }
 
-func (m *Manager) Start() error {
-	m.logger.Info("Démarrage du gestionnaire série")
+// scanCOMPorts detects all available COM ports dynamically on Windows (COM1..COM99)
+// plus any explicitly configured ports.
+func (m *Manager) scanCOMPorts() []string {
+	found := []string{}
+	seen := map[string]bool{}
 
-	for _, port := range m.cfg.Serial.Ports {
+	// First, try configured ports
+	for _, p := range m.cfg.Serial.Ports {
+		if !seen[p] {
+			seen[p] = true
+			found = append(found, p)
+		}
+	}
+
+	// Dynamic scan COM1..COM99 for Windows
+	for i := 1; i <= 99; i++ {
+		port := fmt.Sprintf("COM%d", i)
+		if seen[port] {
+			continue
+		}
+		cfg := &tserial.Config{
+			Name:        port,
+			Baud:        m.cfg.Serial.BaudRate,
+			ReadTimeout: 1 * time.Second,
+		}
+		sp, err := tserial.OpenPort(cfg)
+		if err == nil {
+			sp.Close()
+			found = append(found, port)
+			seen[port] = true
+			m.logger.Infof("Port COM détecté: %s", port)
+		}
+	}
+
+	// Also scan /dev/ttyUSB* and /dev/ttyACM* for Linux
+	for i := 0; i <= 9; i++ {
+		for _, prefix := range []string{"/dev/ttyUSB", "/dev/ttyACM", "/dev/ttyS"} {
+			port := fmt.Sprintf("%s%d", prefix, i)
+			if seen[port] {
+				continue
+			}
+			cfg := &tserial.Config{
+				Name:        port,
+				Baud:        m.cfg.Serial.BaudRate,
+				ReadTimeout: 1 * time.Second,
+			}
+			sp, err := tserial.OpenPort(cfg)
+			if err == nil {
+				sp.Close()
+				found = append(found, port)
+				seen[port] = true
+				m.logger.Infof("Port série détecté: %s", port)
+			}
+		}
+	}
+
+	return found
+}
+
+// isSIM800C sends AT command and checks if the port responds like a SIM800C modem
+func (m *Manager) isSIM800C(port string) bool {
+	cfg := &tserial.Config{
+		Name:        port,
+		Baud:        m.cfg.Serial.BaudRate,
+		ReadTimeout: 2 * time.Second,
+	}
+	sp, err := tserial.OpenPort(cfg)
+	if err != nil {
+		return false
+	}
+	defer sp.Close()
+
+	sp.Write([]byte("AT\r\n"))
+	time.Sleep(500 * time.Millisecond)
+	buf := make([]byte, 64)
+	n, _ := sp.Read(buf)
+	response := strings.TrimSpace(string(buf[:n]))
+	return strings.Contains(response, "OK") || strings.Contains(response, "AT")
+}
+
+func (m *Manager) Start() error {
+	m.logger.Info("Démarrage du gestionnaire série avec auto-discovery des ports COM")
+
+	ports := m.scanCOMPorts()
+	if len(ports) == 0 {
+		m.logger.Warn("Aucun port COM trouvé. En attente de connexion...")
+	}
+
+	for _, port := range ports {
 		go m.connectModule(port)
 	}
 
 	go m.monitorModules()
-
 	return nil
 }
 
 func (m *Manager) connectModule(port string) {
 	m.logger.Infof("Tentative de connexion au module sur %s", port)
 
-	serialConfig := &serial.Config{
+	serialConfig := &tserial.Config{
 		Name:        port,
 		Baud:        m.cfg.Serial.BaudRate,
 		ReadTimeout: m.cfg.GetConnectionTimeout(),
 	}
 
-	serialPort, err := serial.OpenPort(serialConfig)
+	serialPort, err := tserial.OpenPort(serialConfig)
 	if err != nil {
 		m.logger.Errorf("Erreur ouverture port %s: %v", port, err)
 		return
 	}
 
+	// Assign a module ID
+	m.mu.Lock()
+	moduleID := len(m.modules) + 1
+	m.mu.Unlock()
+
 	module := &SIM800C{
 		Port:        port,
 		SerialPort:  serialPort,
 		Logger:      m.logger,
+		ModuleID:    moduleID,
 		commandChan: make(chan Command, m.cfg.Serial.CommandQueueSize),
 		stopChan:    make(chan struct{}),
 	}
@@ -98,14 +189,11 @@ func (m *Manager) connectModule(port string) {
 	m.modules[port] = module
 	m.mu.Unlock()
 
-	// Initialiser le module
 	go module.initialize()
 	go module.handleCommands()
-	// TODO: supprimer readResponses() et basculer vers une lecture unifiée dans sim800c.go
 
-	m.logger.Infof("Module connecté sur %s", port)
+	m.logger.Infof("Module connecté sur %s (ID=%d)", port, moduleID)
 
-	// Broadcast l'événement
 	m.hub.BroadcastEvent(websocket.Event{
 		Type:      "module_connected",
 		ModuleID:  module.ModuleID,
@@ -117,20 +205,36 @@ func (m *Manager) connectModule(port string) {
 func (m *Manager) monitorModules() {
 	interval := m.cfg.Monitoring.CheckIntervalSeconds
 	if interval <= 0 {
-		interval = 5
-		m.logger.Warnf("Monitoring.CheckIntervalSeconds non positif (%d). Valeur par défaut: %d", m.cfg.Monitoring.CheckIntervalSeconds, interval)
+		interval = 10
 	}
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
-
-
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 			m.checkModulesHealth()
+			// Re-scan for newly connected modules
+			m.discoverNewModules()
 		case <-m.stopChan:
 			return
+		}
+	}
+}
+
+func (m *Manager) discoverNewModules() {
+	ports := m.scanCOMPorts()
+	m.mu.RLock()
+	existing := make(map[string]bool, len(m.modules))
+	for p := range m.modules {
+		existing[p] = true
+	}
+	m.mu.RUnlock()
+
+	for _, port := range ports {
+		if !existing[port] {
+			m.logger.Infof("Nouveau port détecté: %s - connexion en cours...", port)
+			go m.connectModule(port)
 		}
 	}
 }

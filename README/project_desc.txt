@@ -27,6 +27,15 @@ Le plan de numérotation en Cote d'Ivoire (CI) est à 10 chiffires et est repart
 		
 - Fonction 1 : Module Auto-Discovery 
 1-1- Scan et Identification de tous les modules SIM800C USB connecté à l'ordinateur.
+		Ci-dessous quelques informations pour aider à differencier un port COM connecté à un module SIM800C d'un autre port sans module SIM800C:
+		1-1-1- Mes modules SIM800C USB apparaissent dans le Gestionnaire de périphériques avec le nom : USB-SERIAL CH340
+		1-1-1- Lors d'un test avec Putty sur chaque COM connecté à un module SIM800C, j'obtient le resultat suivant:
+				commande1 => AT
+				reponse1 => OK
+				commande2 => ATI
+				reponse2 => SIM800 R14.18
+							OK
+
 1-2- Pour chaque module SIM800C USB, collecter le informations de la SIM insérée, en executant le code ussd de la colonne "Code USSD" où Nom opérateur mobile == Universel
 	Le module SIM800C USB pourra etre identifié aussi par le numero de telephone de la carte SIM presente dans le module
 	Exemple : IMEI (indicatif telephonique + numero de telephone de la SIM)
@@ -94,7 +103,8 @@ NB :
 
 - Le frontend sera accessible via test-sim800c.lan:8082
 - Creer un theme clair et sombre pour le Frontend et creer un bouton pour changer le thème
-
+- Je veux un script start_app.bat pour demarrer l'execution du projet et toutes ses composantes étapes par étapes
+- Je veux un script stop_app.bat pour stopper l'execution du projet et toutes ses composantes étapes par étapes
 
 
 

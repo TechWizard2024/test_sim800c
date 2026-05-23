@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"sim800c-supervisor/internal/config"
@@ -11,6 +12,7 @@ import (
 	"sim800c-supervisor/internal/serial"
 	"sim800c-supervisor/internal/ussd"
 
+	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
 
@@ -186,4 +188,76 @@ func (h *USSDHandler) AutoMenuDiscovery(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
+}
+
+// GetStatusCodes returns USSD codes for Action=Consulter, Target=Interne, Scope=In for a module's carrier
+func (h *USSDHandler) GetStatusCodes(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "ID invalide", http.StatusBadRequest)
+		return
+	}
+
+	var carrier string
+	for _, module := range h.serialManager.GetAllModules() {
+		if module.ModuleID == id {
+			carrier = module.Carrier
+			break
+		}
+	}
+
+	codes := h.excelReader.GetConsultCodes(carrier)
+	result := make([]map[string]interface{}, 0, len(codes))
+	for _, c := range codes {
+		result = append(result, map[string]interface{}{
+			"id":          c.ID,
+			"carrier":     c.Carrier,
+			"action":      c.Action,
+			"target":      c.Target,
+			"operation":   c.Operation,
+			"ussd_code":   c.USSDCode,
+			"info_input":  c.InformationINPUT,
+			"info_output": c.InformationOUTPUT,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// GetMenuCodes returns USSD codes for Action=Services_N1, Target=Interne, Scope=In for a module's carrier
+func (h *USSDHandler) GetMenuCodes(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr := vars["id"]
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "ID invalide", http.StatusBadRequest)
+		return
+	}
+
+	var carrier string
+	for _, module := range h.serialManager.GetAllModules() {
+		if module.ModuleID == id {
+			carrier = module.Carrier
+			break
+		}
+	}
+
+	codes := h.excelReader.GetServiceNCodes(carrier)
+	result := make([]map[string]interface{}, 0, len(codes))
+	for _, c := range codes {
+		result = append(result, map[string]interface{}{
+			"id":          c.ID,
+			"carrier":     c.Carrier,
+			"action":      c.Action,
+			"target":      c.Target,
+			"operation":   c.Operation,
+			"ussd_code":   c.USSDCode,
+			"info_input":  c.InformationINPUT,
+			"info_output": c.InformationOUTPUT,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }

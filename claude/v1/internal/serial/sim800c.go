@@ -3,13 +3,14 @@ package serial
 import (
 	"bufio"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"sim800c-supervisor/internal/websocket"
 
-	"github.com/tarm/serial"
+	tserial "github.com/tarm/serial"
 )
 
 // --- internal buffer used for single-reader synchronization ---
@@ -68,7 +69,7 @@ func (rb *syncReadBuffer) waitReadUntil(startIdx *int, expected string, timeout 
 	}
 }
 
-// SIM800C methods live on the SIM800C struct defined in manager.go
+// SIM800C methods
 
 func (s *SIM800C) startSingleReader() {
 	s.mu.Lock()
@@ -99,11 +100,6 @@ func (s *SIM800C) startSingleReader() {
 			}
 			s.Logger.Debugf("RX: %s", line)
 			s.rb.push(line)
-			// notify asynchronous events (CUSD / CMTI)
-			if strings.Contains(line, "+CMTI:") {
-				// monitoring is handled by SMSManager polling, so just log
-				// (we keep it lightweight to avoid blocking reader)
-			}
 		}
 	}()
 }
@@ -155,7 +151,6 @@ func (s *SIM800C) getPhoneNumber() (string, error) {
 		if !strings.Contains(line, "+CNUM") {
 			continue
 		}
-		// Format: +CNUM: "line1","+225...",145
 		firstQ := strings.Index(line, "\"")
 		if firstQ == -1 {
 			continue
@@ -181,31 +176,113 @@ func (s *SIM800C) getPhoneNumber() (string, error) {
 	return "", fmt.Errorf("numéro non trouvé")
 }
 
-func (s *SIM800C) getPhoneNumberViaUSSD() (string, error) {
-	resp, err := s.sendCommandWithResponse("AT+CUSD=1,\"#99#\",15", "+CUSD:", 30*time.Second)
+// detectCarrierFromNumber determines carrier from CI phone prefix
+func detectCarrierFromNumber(phoneNumber string) string {
+	// Strip country code prefix (+225, 00225, 225)
+	num := phoneNumber
+	for _, prefix := range []string{"+225", "00225", "225"} {
+		if strings.HasPrefix(num, prefix) {
+			num = num[len(prefix):]
+			break
+		}
+	}
+	num = strings.TrimSpace(num)
+
+	if strings.HasPrefix(num, "07") {
+		return "Orange"
+	}
+	if strings.HasPrefix(num, "05") {
+		return "MTN"
+	}
+	if strings.HasPrefix(num, "01") {
+		return "Moov"
+	}
+	return "Universel"
+}
+
+// defaultPINForCarrier returns the default PIN for a carrier
+func defaultPINForCarrier(carrier string) string {
+	switch carrier {
+	case "Orange":
+		return "0000"
+	case "MTN":
+		return "12345"
+	case "Moov":
+		return "0101"
+	}
+	return "0000"
+}
+
+// checkAndUnlockPIN checks if SIM is PIN-locked and attempts to unlock
+func (s *SIM800C) checkAndUnlockPIN() error {
+	resp, err := s.sendCommandWithResponse("AT+CPIN?", "OK", 10*time.Second)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	for _, line := range strings.Split(resp, "\n") {
-		if !strings.Contains(line, "+CUSD:") {
+	if !strings.Contains(resp, "SIM PIN") {
+		// Not PIN-locked, or already ready
+		return nil
+	}
+
+	s.Logger.Warnf("Module %s: SIM PIN requis - tentative de déverrouillage automatique", s.Port)
+
+	// Try to detect carrier from partial info or try all default PINs
+	pinsToTry := []string{"0000", "12345", "0101"}
+	if s.Carrier != "" && s.Carrier != "Universel" {
+		pin := defaultPINForCarrier(s.Carrier)
+		// Put carrier-specific pin first
+		pinsToTry = append([]string{pin}, pinsToTry...)
+	}
+
+	for _, pin := range pinsToTry {
+		unlockResp, err := s.sendCommandWithResponse(fmt.Sprintf("AT+CPIN=\"%s\"", pin), "OK", 10*time.Second)
+		if err == nil && (strings.Contains(unlockResp, "OK") || strings.Contains(unlockResp, "READY")) {
+			s.Logger.Infof("Module %s: PIN déverrouillé avec succès (PIN: %s)", s.Port, pin)
+			// Wait for SIM to become ready
+			time.Sleep(3 * time.Second)
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return fmt.Errorf("impossible de déverrouiller le PIN - vérifiez les codes PIN par défaut")
+}
+
+func (s *SIM800C) getPhoneNumberViaUSSD() (string, error) {
+	// Universal USSD to get phone number
+	universalCodes := []string{"#99#", "*99#", "#06#"}
+	for _, code := range universalCodes {
+		resp, err := s.sendCommandWithResponse(fmt.Sprintf("AT+CUSD=1,\"%s\",15", code), "+CUSD:", 30*time.Second)
+		if err != nil {
 			continue
 		}
-		start := strings.Index(line, "\"")
-		if start == -1 {
-			continue
-		}
-		endRel := strings.Index(line[start+1:], "\"")
-		if endRel == -1 {
-			continue
-		}
-		end := start + 1 + endRel
-		num := strings.TrimSpace(line[start+1 : end])
-		if strings.Contains(num, "+225") {
-			return num, nil
+
+		for _, line := range strings.Split(resp, "\n") {
+			if !strings.Contains(line, "+CUSD:") {
+				continue
+			}
+			start := strings.Index(line, "\"")
+			if start == -1 {
+				continue
+			}
+			endRel := strings.Index(line[start+1:], "\"")
+			if endRel == -1 {
+				continue
+			}
+			end := start + 1 + endRel
+			num := strings.TrimSpace(line[start+1 : end])
+			// Extract phone number from response (may contain +225...)
+			phoneRe := regexp.MustCompile(`(?:\+225|00225|225)?0[157]\d{8}`)
+			if match := phoneRe.FindString(num); match != "" {
+				return match, nil
+			}
+			if strings.Contains(num, "225") {
+				return num, nil
+			}
 		}
 	}
-	return "", fmt.Errorf("numéro non trouvé")
+	return "", fmt.Errorf("numéro non trouvé via USSD")
 }
 
 func (s *SIM800C) SendAT() error {
@@ -220,6 +297,13 @@ func (s *SIM800C) initialize() error {
 	if _, err := s.sendCommandWithResponse("AT", "OK", 10*time.Second); err != nil {
 		return fmt.Errorf("AT test échoué: %w", err)
 	}
+
+	// Check and unlock PIN before proceeding
+	if err := s.checkAndUnlockPIN(); err != nil {
+		s.Logger.Warnf("Module %s: %v", s.Port, err)
+		// Continue anyway - some operations may still work
+	}
+
 	if _, err := s.sendCommandWithResponse("AT+CMGF=1", "OK", 10*time.Second); err != nil {
 		return fmt.Errorf("mode SMS texte échoué: %w", err)
 	}
@@ -232,15 +316,35 @@ func (s *SIM800C) initialize() error {
 
 	if phoneNumber, err := s.getPhoneNumber(); err == nil && phoneNumber != "" && phoneNumber != "ERROR" {
 		s.PhoneNumber = phoneNumber
-		s.Logger.Infof("Numéro (AT+CNUM): %s", phoneNumber)
+		s.Carrier = detectCarrierFromNumber(phoneNumber)
+		s.Logger.Infof("Numéro (AT+CNUM): %s, Opérateur: %s", phoneNumber, s.Carrier)
 	} else {
 		if number, err := s.getPhoneNumberViaUSSD(); err == nil && number != "" {
 			s.PhoneNumber = number
-			s.Logger.Infof("Numéro (USSD): %s", number)
+			s.Carrier = detectCarrierFromNumber(number)
+			s.Logger.Infof("Numéro (USSD): %s, Opérateur: %s", number, s.Carrier)
 		}
 	}
 
 	return nil
+}
+
+// FormatUSSDResponse cleans up SIM800C raw USSD menu text
+// The modem returns text with unusual whitespace/alignment used for display on old phones.
+// We normalize it to clean, readable lines.
+func FormatUSSDResponse(raw string) string {
+	lines := strings.Split(raw, "\n")
+	var cleaned []string
+	for _, line := range lines {
+		// Collapse multiple spaces/tabs to single space, trim
+		spaceRe := regexp.MustCompile(`\s{2,}`)
+		line = spaceRe.ReplaceAllString(line, " ")
+		line = strings.TrimSpace(line)
+		if line != "" {
+			cleaned = append(cleaned, line)
+		}
+	}
+	return strings.Join(cleaned, "\n")
 }
 
 func (s *SIM800C) ExecuteUSSD(code string, inputData string) (string, error) {
@@ -248,7 +352,20 @@ func (s *SIM800C) ExecuteUSSD(code string, inputData string) (string, error) {
 	cmd := fmt.Sprintf("AT+CUSD=1,\"%s\",15", code)
 	resp, err := s.sendCommandWithResponse(cmd, "+CUSD:", 30*time.Second)
 	if err != nil {
-		return "", err
+		// Check if it's a PIN issue
+		if strings.Contains(err.Error(), "ERROR") || strings.Contains(resp, "ERROR") {
+			pinResp, _ := s.sendCommandWithResponse("AT+CPIN?", "OK", 5*time.Second)
+			if strings.Contains(pinResp, "SIM PIN") {
+				// Try PIN unlock
+				if unlockErr := s.checkAndUnlockPIN(); unlockErr == nil {
+					// Retry
+					resp, err = s.sendCommandWithResponse(cmd, "+CUSD:", 30*time.Second)
+				}
+			}
+		}
+		if err != nil {
+			return "", err
+		}
 	}
 
 	if strings.Contains(resp, "+CUSD:") {
@@ -257,7 +374,8 @@ func (s *SIM800C) ExecuteUSSD(code string, inputData string) (string, error) {
 			endRel := strings.LastIndex(resp[start+1:], "\"")
 			if endRel != -1 {
 				end := start + 1 + endRel
-				return resp[start+1 : end], nil
+				rawText := resp[start+1 : end]
+				return FormatUSSDResponse(rawText), nil
 			}
 		}
 	}
@@ -265,7 +383,6 @@ func (s *SIM800C) ExecuteUSSD(code string, inputData string) (string, error) {
 }
 
 func (s *SIM800C) SendSMS(number, message string) error {
-	// NOTE: on garde l’envoi synchrone sous la même exclusion que les autres commandes.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -307,7 +424,6 @@ func (s *SIM800C) SendSMS(number, message string) error {
 		return err
 	}
 
-	// Wait for +CMGS:
 	idx2 := idx
 	_, err := s.rb.waitReadUntil(&idx2, "+CMGS:", 30*time.Second)
 	return err
@@ -372,7 +488,6 @@ func (s *SIM800C) ListSMS() ([]map[string]interface{}, error) {
 	return smsList, nil
 }
 
-// handleCommands and SendCommand keep compatibility with current manager.go.
 func (s *SIM800C) handleCommands() {
 	for {
 		select {
@@ -420,7 +535,6 @@ func isDigits(s string) bool {
 	return true
 }
 
-// ensure websocket import not removed by gofmt in case of future use
+// ensure websocket import not removed by gofmt
 var _ = websocket.Event{}
-var _ = serial.Port{}
-
+var _ = tserial.Port{}

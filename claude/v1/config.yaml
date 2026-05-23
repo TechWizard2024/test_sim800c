@@ -6,10 +6,8 @@ server:
   write_timeout_seconds: 30
 
 serial:
-  ports:
-    - "COM5"
-    - "COM6"
-    - "COM7"
+  # Ports listed here are tried first; auto-discovery scans COM1-COM99 and /dev/ttyUSB* as well
+  ports: []
   baud_rate: 9600
   timeout_seconds: 30
   reconnect_delay_seconds: 5
@@ -26,14 +24,14 @@ mysql:
   conn_max_lifetime_minutes: 60
 
 excel:
-  base_path: "C:/xampp/htdocs/aa_Toolbox/test_sim800c/deepseek/v1/storage/excel"
+  base_path: "C:/xampp/htdocs/aa_Toolbox/test_sim800c/storage/excel"
   filename_pattern: "Codes_USSD_CI*.xlsx"
   reload_interval_minutes: 5
 
 ussd:
   max_menu_depth: 10
   session_timeout_seconds: 60
-  explore_delay_ms: 1000
+  explore_delay_ms: 1500
 
 sms:
   auto_trash_keyword: "Test"
@@ -49,3 +47,6 @@ security:
 logging:
   level: "info"
   output_path: "storage/logs/app.log"
+
+monitoring:
+  check_interval_seconds: 30

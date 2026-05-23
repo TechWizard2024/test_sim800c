@@ -74,22 +74,31 @@ func (a *AuthManager) CreateDefaultAdmin() {
 }
 
 func (a *AuthManager) LoginHandler(w http.ResponseWriter, r *http.Request) {
+	a.logger.Infof("Login handler hit method=%s path=%s content-type=%s", r.Method, r.URL.Path, r.Header.Get("Content-Type"))
+
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		a.logger.Warnf("Login: JSON decode erreur: %v", err)
 		http.Error(w, "Requête invalide", http.StatusBadRequest)
 		return
 	}
+	a.logger.Infof("Login: username=%s from=%s", req.Username, r.RemoteAddr)
+
 
 	user, err := a.db.GetUserByUsername(req.Username)
 	if err != nil {
+		a.logger.Warnf("Login: GetUserByUsername erreur: %v", err)
 		http.Error(w, "Identifiants invalides", http.StatusUnauthorized)
 		return
 	}
 
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		a.logger.Warnf("Login: bcrypt compare échoué pour username=%s: %v", req.Username, err)
 		http.Error(w, "Identifiants invalides", http.StatusUnauthorized)
 		return
 	}
+
 
 	token, err := a.generateToken(user)
 	if err != nil {
@@ -107,6 +116,8 @@ func (a *AuthManager) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		Username: user.Username,
 		Role:     user.Role,
 	})
+	a.logger.Infof("Login: success username=%s user_id=%s role=%s", user.Username, user.ID, user.Role)
+
 }
 
 func (a *AuthManager) LogoutHandler(w http.ResponseWriter, r *http.Request) {

@@ -37,7 +37,7 @@ echo [3/3] Demarrage de l'application...
 echo.
 
 echo L'application va demarrer sur http://localhost:8080
-echo Frontend accessible sur http://test_sim800c.local
+echo Frontend accessible sur http://test-sim800c.lan
 echo.
 echo Appuyez sur Ctrl+C pour arreter l'application
 echo.

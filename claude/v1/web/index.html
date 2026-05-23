@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIM800C Supervisor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        
+        /* Login Modal */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+        .modal-content { background: white; margin: 10% auto; padding: 30px; width: 350px; border-radius: 15px; }
+        .modal-content h2 { margin-bottom: 20px; color: #667eea; }
+        .modal-content input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
+        .modal-content button { width: 100%; padding: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 5px; cursor: pointer; }
+        
+        /* Main App */
+        .app-container { display: none; max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { background: white; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header h1 { color: #667eea; margin-bottom: 10px; }
+        .user-info { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+        .logout-btn { padding: 5px 15px; background: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        
+        /* Tabs */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tab-btn { padding: 10px 20px; background: white; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; }
+        .tab-btn.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        
+        /* Modules Grid */
+        .modules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
+        .module-card { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .module-card h3 { color: #333; margin-bottom: 10px; }
+        .sim-info { background: #f8f9fa; border-radius: 10px; padding: 15px; margin: 15px 0; }
+        .sim-info p { margin: 5px 0; }
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+        .btn { padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        .result { margin-top: 15px; padding: 10px; background: #e8f5e9; border-radius: 10px; display: none; max-height: 200px; overflow: auto; }
+        .result pre { white-space: pre-wrap; font-size: 12px; }
+        
+        /* SMS List */
+        .sms-list { max-height: 500px; overflow-y: auto; }
+        .sms-item { background: white; border-radius: 10px; padding: 15px; margin-bottom: 10px; border-left: 4px solid #667eea; }
+        .sms-header { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 12px; color: #666; }
+        .sms-content { margin-bottom: 10px; }
+        .sms-trash { border-left-color: #f44336; background: #fff5f5; }
+        
+        /* Loading */
+        .loading { text-align: center; padding: 40px; color: #666; }
+        
+        /* Toast */
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: white; padding: 12px 20px; border-radius: 8px; z-index: 1000; animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal" style="display: flex;">
+        <div class="modal-content">
+            <h2>🔐 Connexion</h2>
+            <form id="login-form">
+                <input type="text" id="username" placeholder="Nom d'utilisateur" required>
+                <div style="position: relative;">
+                    <input type="password" id="password" placeholder="Mot de passe" required style="padding-right: 90px;">
+                    <button type="button" id="toggle-password" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); width:76px; padding: 6px 0; background:#eee; border:1px solid #ddd; border-radius:6px; cursor:pointer;">Afficher</button>
+                </div>
+                <button type="submit">Se connecter</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="app-container">
+        <div class="header">
+            <h1>📱 SIM800C Supervisor</h1>
+            <div class="user-info">
+                <span id="user-name">Utilisateur</span>
+                <button class="logout-btn" onclick="logout()">Déconnexion</button>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('dashboard')">📊 Dashboard</button>
+            <button class="tab-btn" onclick="showTab('ussd')">🔧 USSD Manager</button>
+            <button class="tab-btn" onclick="showTab('sms')">💬 SMS Manager</button>
+            <button class="tab-btn" onclick="showTab('explorer')">🌲 Menu Explorer</button>
+            <button class="tab-btn" onclick="showTab('audit')">📜 Audit Logs</button>
+        </div>
+        
+        <!-- Dashboard Tab -->
+        <div id="dashboard-tab" class="tab-content">
+            <div class="modules-grid" id="modules-container">Chargement...</div>
+        </div>
+        
+        <!-- USSD Tab -->
+        <div id="ussd-tab" class="tab-content" style="display: none;">
+            <div class="module-card">
+                <h3>🔧 Exécuter un code USSD</h3>
+                <select id="ussd-module" style="width: 100%; padding: 10px; margin: 10px 0;"></select>
+                <input type="text" id="ussd-code" placeholder="Code USSD (ex: #122#)" style="width: 100%; padding: 10px; margin: 10px 0;">
+                <input type="text" id="ussd-input" placeholder="Données d'entrée (optionnel)" style="width: 100%; padding: 10px; margin: 10px 0;">
+                <button class="btn btn-primary" onclick="executeUSSDManual()">▶ Exécuter</button>
+                <div id="ussd-result" class="result"></div>
+            </div>
+            <div class="module-card" style="margin-top: 20px;">
+                <h3>⚡ Actions rapides</h3>
+                <button class="btn btn-primary" onclick="autoStatusDiscovery()">🚀 SIM Status Auto-Discovery</button>
+                <button class="btn btn-primary" onclick="autoMenuDiscovery()">🌲 USSD Menu Auto-Discovery</button>
+            </div>
+        </div>
+        
+        <!-- SMS Tab -->
+        <div id="sms-tab" class="tab-content" style="display: none;">
+            <div class="module-card">
+                <h3>✉️ Envoyer un SMS</h3>
+                <select id="sms-module" style="width: 100%; padding: 10px; margin: 10px 0;"></select>
+                <input type="tel" id="sms-number" placeholder="Numéro destinataire" style="width: 100%; padding: 10px; margin: 10px 0;">
+                <textarea id="sms-message" rows="3" placeholder="Message" style="width: 100%; padding: 10px; margin: 10px 0;"></textarea>
+                <button class="btn btn-primary" onclick="sendSMS()">📨 Envoyer</button>
+            </div>
+            <div class="module-card" style="margin-top: 20px;">
+                <h3>📥 Messages reçus</h3>
+                <select id="sms-module-filter" style="width: 200px; padding: 5px; margin-bottom: 10px;"></select>
+                <div id="sms-list" class="sms-list">Chargement...</div>
+            </div>
+        </div>
+        
+        <!-- Explorer Tab -->
+        <div id="explorer-tab" class="tab-content" style="display: none;">
+            <div class="module-card">
+                <h3>🌲 Explorer un menu USSD</h3>
+                <select id="explorer-module" style="width: 100%; padding: 10px; margin: 10px 0;"></select>
+                <input type="text" id="explorer-code" placeholder="Code USSD (ex: #144#)" style="width: 100%; padding: 10px; margin: 10px 0;">
+                <button class="btn btn-primary" onclick="exploreMenu()">🔍 Explorer</button>
+                <div id="explorer-result" class="result"></div>
+            </div>
+        </div>
+        
+        <!-- Audit Tab -->
+        <div id="audit-tab" class="tab-content" style="display: none;">
+            <div class="module-card">
+                <h3>📜 Historique des actions</h3>
+                <div id="audit-list" class="sms-list">Chargement...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = null;
+        let currentUser = null;
+
+        // Bouton afficher/masquer le mot de passe
+        document.getElementById('toggle-password').addEventListener('click', () => {
+            const pwd = document.getElementById('password');
+            const btn = document.getElementById('toggle-password');
+            const isPassword = pwd.type === 'password';
+            pwd.type = isPassword ? 'text' : 'password';
+            btn.textContent = isPassword ? 'Masquer' : 'Afficher';
+        });
+
+        // Login
+        const API_BASE = window.location.origin;
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                console.log('[login] submit clicked', { username, passwordLen: password?.length });
+                const response = await fetch(API_BASE + '/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const text = await response.text();
+                if (response.ok) {
+                    const data = JSON.parse(text);
+                    authToken = data.token;
+                    currentUser = data;
+                    localStorage.setItem('token', authToken);
+                    document.getElementById('login-modal').style.display = 'none';
+                    document.getElementById('app').style.display = 'block';
+                    document.getElementById('user-name').textContent = data.username;
+                    loadModules();
+                    loadModulesSelectors();
+                } else {
+                    console.error('Login failed:', response.status, text);
+                    alert('Login échoué (' + response.status + '): ' + text);
+                }
+
+            } catch (error) {
+                alert('Erreur de connexion');
+            }
+        });
+
+        // Check saved token
+        const savedToken = localStorage.getItem('token');
+        if (savedToken) {
+            authToken = savedToken;
+            document.getElementById('login-modal').style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+            loadModules();
+            loadModulesSelectors();
+        }
+
+        async function apiCall(url, options = {}) {
+            const headers = { 'Content-Type': 'application/json', ...options.headers };
+            if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401) {
+                localStorage.removeItem('token');
+                location.reload();
+            }
+            return response;
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            authToken = null;
+            location.reload();
+        }
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`${tab}-tab`).style.display = 'block';
+            event.target.classList.add('active');
+            if (tab === 'sms') loadSMS();
+            if (tab === 'audit') loadAudit();
+        }
+
+        async function loadModules() {
+            const response = await apiCall('/api/modules');
+            const modules = await response.json();
+            const container = document.getElementById('modules-container');
+            container.innerHTML = modules.map(m => `
+                <div class="module-card">
+                    <h3>📡 Module ${m.port}</h3>
+                    <div class="sim-info">
+                        <p><strong>IMEI:</strong> ${m.imei}</p>
+                        <p><strong>Numéro:</strong> ${m.phone_number}</p>
+                        <p><strong>Opérateur:</strong> ${m.carrier}</p>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="executeUSSD(${m.id}, '#122#')">💰 Crédit</button>
+                        <button class="btn btn-primary" onclick="executeUSSD(${m.id}, '#144#')">📋 Menu</button>
+                        <button class="btn btn-primary" onclick="openUSSDModal(${m.id})">🔧 USSD</button>
+                    </div>
+                    <div id="result-${m.id}" class="result"></div>
+                </div>
+            `).join('');
+        }
+
+        async function executeUSSD(moduleId, code, inputData = '') {
+            const resultDiv = document.getElementById(`result-${moduleId}`);
+            if (resultDiv) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '<pre>⏳ Exécution...</pre>';
+            }
+            
+            const response = await apiCall(`/api/modules/${moduleId}/ussd/execute`, {
+                method: 'POST',
+                body: JSON.stringify({ ussd_code: code, input_data: inputData })
+            });
+            const result = await response.json();
+            
+            if (resultDiv) resultDiv.innerHTML = '<pre>' + (result.result || 'Erreur') + '</pre>';
+            showToast(result.success ? 'Succès' : 'Erreur', result.success ? 'success' : 'error');
+        }
+
+        async function executeUSSDManual() {
+            const moduleId = document.getElementById('ussd-module').value;
+            const code = document.getElementById('ussd-code').value;
+            const inputData = document.getElementById('ussd-input').value;
+            if (!code) { alert('Entrez un code USSD'); return; }
+            
+            const resultDiv = document.getElementById('ussd-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<pre>⏳ Exécution...</pre>';
+            
+            const response = await apiCall(`/api/modules/${moduleId}/ussd/execute`, {
+                method: 'POST',
+                body: JSON.stringify({ ussd_code: code, input_data: inputData })
+            });
+            const result = await response.json();
+            resultDiv.innerHTML = '<pre>' + (result.result || JSON.stringify(result, null, 2)) + '</pre>';
+        }
+
+        async function autoStatusDiscovery() {
+            showToast('Auto-Discovery en cours...', 'info');
+            const response = await apiCall('/api/ussd/auto-status', { method: 'POST' });
+            const results = await response.json();
+            showToast('Auto-Discovery terminé', 'success');
+            console.log(results);
+        }
+
+        async function autoMenuDiscovery() {
+            showToast('Auto-Discovery menu en cours...', 'info');
+            const response = await apiCall('/api/ussd/auto-menu', { method: 'POST' });
+            const results = await response.json();
+            showToast('Auto-Discovery menu terminé', 'success');
+            console.log(results);
+        }
+
+        async function exploreMenu() {
+            const moduleId = document.getElementById('explorer-module').value;
+            const code = document.getElementById('explorer-code').value;
+            if (!code) { alert('Entrez un code USSD'); return; }
+            
+            const resultDiv = document.getElementById('explorer-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<pre>⏳ Exploration...</pre>';
+            
+            const response = await apiCall(`/api/ussd/explore/${moduleId}/${encodeURIComponent(code)}`, { method: 'POST' });
+            const result = await response.json();
+            resultDiv.innerHTML = '<pre>' + (result.menu_tree || JSON.stringify(result, null, 2)) + '</pre>';
+        }
+
+        async function sendSMS() {
+            const moduleId = document.getElementById('sms-module').value;
+            const number = document.getElementById('sms-number').value;
+            const message = document.getElementById('sms-message').value;
+            if (!number || !message) { alert('Complétez tous les champs'); return; }
+            
+            const response = await apiCall(`/api/modules/${moduleId}/sms/send`, {
+                method: 'POST',
+                body: JSON.stringify({ number, message })
+            });
+            if (response.ok) {
+                alert('SMS envoyé');
+                document.getElementById('sms-number').value = '';
+                document.getElementById('sms-message').value = '';
+                loadSMS();
+            }
+        }
+
+        async function loadSMS() {
+            const moduleId = document.getElementById('sms-module-filter').value || 'all';
+            let smsList = [];
+            
+            if (moduleId === 'all') {
+                const modules = await (await apiCall('/api/modules')).json();
+                for (const m of modules) {
+                    const response = await apiCall(`/api/modules/${m.id}/sms?include_trash=true`);
+                    const sms = await response.json();
+                    smsList.push(...sms);
+                }
+            } else {
+                const response = await apiCall(`/api/modules/${moduleId}/sms?include_trash=true`);
+                smsList = await response.json();
+            }
+            
+            const container = document.getElementById('sms-list');
+            container.innerHTML = smsList.map(s => `
+                <div class="sms-item ${s.is_trash ? 'sms-trash' : ''}">
+                    <div class="sms-header">
+                        <span>${s.direction === 'in' ? '📩' : '📤'} ${s.sender_number || s.receiver_number}</span>
+                        <span>${new Date(s.received_at).toLocaleString()}</span>
+                    </div>
+                    <div class="sms-content">${s.message}</div>
+                    <div class="btn-group">
+                        ${!s.is_trash ? `<button class="btn btn-danger" onclick="moveToTrash(${s.id})">🗑️ Corbeille</button>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function moveToTrash(smsId) {
+            await apiCall(`/api/sms/trash/${smsId}`, { method: 'POST' });
+            loadSMS();
+        }
+
+        async function loadAudit() {
+            const response = await apiCall('/api/audit/logs');
+            const logs = await response.json();
+            const container = document.getElementById('audit-list');
+            container.innerHTML = logs.map(l => `
+                <div class="sms-item">
+                    <div class="sms-header">
+                        <span>👤 ${l.user_id}</span>
+                        <span>${new Date(l.created_at).toLocaleString()}</span>
+                    </div>
+                    <div><strong>Action:</strong> ${l.action}</div>
+                    <div><strong>Cible:</strong> ${l.target_type} #${l.target_id}</div>
+                    <div><strong>IP:</strong> ${l.ip_address}</div>
+                </div>
+            `).join('');
+        }
+
+        async function loadModulesSelectors() {
+            const response = await apiCall('/api/modules');
+            const modules = await response.json();
+            const options = modules.map(m => `<option value="${m.id}">${m.port} - ${m.carrier}</option>`).join('');
+            document.getElementById('ussd-module').innerHTML = options;
+            document.getElementById('sms-module').innerHTML = options;
+            document.getElementById('sms-module-filter').innerHTML = '<option value="all">Tous les modules</option>' + options;
+            document.getElementById('explorer-module').innerHTML = options;
+        }
+
+        function openUSSDModal(moduleId) {
+            const code = prompt('Code USSD à exécuter:');
+            if (code) executeUSSD(moduleId, code);
+        }
+
+        function showToast(message, type) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.style.background = type === 'error' ? '#f44336' : type === 'success' ? '#4caf50' : '#2196f3';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        setInterval(() => { if (document.getElementById('dashboard-tab').style.display !== 'none') loadModules(); }, 30000);
+        setInterval(() => { if (document.getElementById('sms-tab').style.display !== 'none') loadSMS(); }, 10000);
+    </script>
+</body>
+</html>

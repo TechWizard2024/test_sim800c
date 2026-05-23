@@ -115,7 +115,14 @@ func (m *Manager) connectModule(port string) {
 }
 
 func (m *Manager) monitorModules() {
-	ticker := time.NewTicker(time.Duration(m.cfg.Monitoring.CheckIntervalSeconds) * time.Second)
+	interval := m.cfg.Monitoring.CheckIntervalSeconds
+	if interval <= 0 {
+		interval = 5
+		m.logger.Warnf("Monitoring.CheckIntervalSeconds non positif (%d). Valeur par défaut: %d", m.cfg.Monitoring.CheckIntervalSeconds, interval)
+	}
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+
+
 	defer ticker.Stop()
 
 	for {

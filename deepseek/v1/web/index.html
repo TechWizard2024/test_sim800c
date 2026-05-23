@@ -62,7 +62,10 @@
             <h2>🔐 Connexion</h2>
             <form id="login-form">
                 <input type="text" id="username" placeholder="Nom d'utilisateur" required>
-                <input type="password" id="password" placeholder="Mot de passe" required>
+                <div style="position: relative;">
+                    <input type="password" id="password" placeholder="Mot de passe" required style="padding-right: 90px;">
+                    <button type="button" id="toggle-password" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); width:76px; padding: 6px 0; background:#eee; border:1px solid #ddd; border-radius:6px; cursor:pointer;">Afficher</button>
+                </div>
                 <button type="submit">Se connecter</button>
             </form>
         </div>
@@ -148,21 +151,33 @@
         let authToken = null;
         let currentUser = null;
 
+        // Bouton afficher/masquer le mot de passe
+        document.getElementById('toggle-password').addEventListener('click', () => {
+            const pwd = document.getElementById('password');
+            const btn = document.getElementById('toggle-password');
+            const isPassword = pwd.type === 'password';
+            pwd.type = isPassword ? 'text' : 'password';
+            btn.textContent = isPassword ? 'Masquer' : 'Afficher';
+        });
+
         // Login
+        const API_BASE = window.location.origin;
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             
             try {
-                const response = await fetch('/api/login', {
+                console.log('[login] submit clicked', { username, passwordLen: password?.length });
+                const response = await fetch(API_BASE + '/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
                 
+                const text = await response.text();
                 if (response.ok) {
-                    const data = await response.json();
+                    const data = JSON.parse(text);
                     authToken = data.token;
                     currentUser = data;
                     localStorage.setItem('token', authToken);
@@ -172,8 +187,10 @@
                     loadModules();
                     loadModulesSelectors();
                 } else {
-                    alert('Identifiants invalides');
+                    console.error('Login failed:', response.status, text);
+                    alert('Login échoué (' + response.status + '): ' + text);
                 }
+
             } catch (error) {
                 alert('Erreur de connexion');
             }

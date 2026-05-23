@@ -1,7 +1,7 @@
 J'ai 3 modules SIM800C USB (avec une carte SIM insérée dans chaque module SIM800C USB) connecté à mon pc windows (sur les ports COM) via un USB Hub 3.0 alimenté.
 Je veux le code pour une application (Frontend web + Backend en GoLang + Base de données MyQSL) qui communique en temps reel avec les modules et permet de superviser et d'executer les fonctions des modules SIM800C USB
 
-Le code généré sera stocké dans C:\xampp\htdocs\aa_Toolbox\test_sim800c\deepseek\v1
+Le code généré sera stocké dans C:\xampp\htdocs\aa_Toolbox\test_sim800c\claude\v1
 
 Le fichier Codes_USSD_CI.xlsx (voir pièce jointe ou dans C:\xampp\htdocs\aa_Toolbox\test_sim800c\storage\excel\) contient la liste des codes ussd des operateurs de telephonie mobile en Cote d'Ivoire (CI).
 Le fichier contient les colonnes ci-dessous : 
@@ -92,7 +92,7 @@ NB :
 			- Montant : est un nombre de 2 chiffres ou plus ; nombre >= 50 ;
 			- Référence : est un nombre de 14 chiffres
 
-- Le frontend sera accessible via test_sim800c.local:8082
+- Le frontend sera accessible via test-sim800c.lan:8082
 - Creer un theme clair et sombre pour le Frontend et creer un bouton pour changer le thème
 
 

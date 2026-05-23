@@ -36,6 +36,7 @@ func main() {
 	// Initialiser les logs
 	logger := initLogger(cfg)
 	logger.Info("Démarrage de SIM800C Supervisor v2.0")
+	logger.Infof("Config MySQL: user=%s db=%s host=%s", cfg.MySQL.User, cfg.MySQL.Database, cfg.MySQL.Host)
 
 	// Initialiser la base de données
 	dbConn, err := db.InitDB(cfg)
@@ -96,8 +97,17 @@ func main() {
 	apiRouter.HandleFunc("/login", authManager.LoginHandler).Methods("POST")
 	apiRouter.HandleFunc("/logout", authManager.LogoutHandler).Methods("POST")
 
-	// Routes protégées
-	apiRouter.Use(authManager.AuthMiddlewareMux)
+	// Routes protégées (sauf login/logout/health)
+	apiRouter.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// ignore auth for public endpoints
+			if r.URL.Path == "/api/health" || r.URL.Path == "/api/login" || r.URL.Path == "/api/logout" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			authManager.AuthMiddlewareMux(next).ServeHTTP(w, r)
+		})
+	})
 
 	// Modules
 	apiRouter.HandleFunc("/modules", getModulesHandler(serialManager, logger)).Methods("GET")

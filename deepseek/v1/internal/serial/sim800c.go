@@ -373,10 +373,42 @@ func (s *SIM800C) ListSMS() ([]map[string]interface{}, error) {
 }
 
 // handleCommands and SendCommand keep compatibility with current manager.go.
-func (s *SIM800C) handleCommands() {}
+func (s *SIM800C) handleCommands() {
+	for {
+		select {
+		case cmd := <-s.commandChan:
+			switch cmd.Type {
+			case "ussd":
+				res, err := s.ExecuteUSSD(cmd.USSDCode, cmd.InputData)
+				if err != nil {
+					cmd.Response <- fmt.Sprintf("Erreur: %v", err)
+				} else {
+					cmd.Response <- res
+				}
+			case "sms_send":
+				err := s.SendSMS(cmd.SMSNumber, cmd.SMSMessage)
+				if err != nil {
+					cmd.Response <- fmt.Sprintf("Erreur: %v", err)
+				} else {
+					cmd.Response <- "SMS envoyé avec succès"
+				}
+			}
+		case <-s.stopChan:
+			return
+		}
+	}
+}
 
 func (s *SIM800C) SendCommand(cmd Command) (string, error) {
-	return "", fmt.Errorf("SendCommand non supporté dans cette version refactor")
+	cmd.Response = make(chan string, 1)
+	s.commandChan <- cmd
+
+	select {
+	case response := <-cmd.Response:
+		return response, nil
+	case <-time.After(30 * time.Second):
+		return "", fmt.Errorf("timeout commande")
+	}
 }
 
 func isDigits(s string) bool {

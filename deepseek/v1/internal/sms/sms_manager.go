@@ -199,8 +199,13 @@ func (m *SMSManager) AutoFilterTrash(module *serial.SIM800C) error {
 }
 
 func (m *SMSManager) StartMonitoring(serialManager *serial.Manager, intervalSeconds int) {
+	if intervalSeconds <= 0 {
+		m.logger.Warnf("SMS.CheckIntervalSeconds non positif (%d). Valeur par défaut: %d", intervalSeconds, 5)
+		intervalSeconds = 5
+	}
 	ticker := time.NewTicker(time.Duration(intervalSeconds) * time.Second)
 	go func() {
+
 		for range ticker.C {
 			for _, module := range serialManager.GetAllModules() {
 				if err := m.ReadSMS(module); err != nil {

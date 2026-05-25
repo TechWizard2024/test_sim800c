@@ -1627,7 +1627,7 @@ func (h *USSDHandler) ExecuteUSSD(w http.ResponseWriter, r *http.Request) {
 		// Sauvegarder l'historique d'erreur
 		history := &db.USSDHistory{
 			ModuleID:   req.ModuleID,
-			USSSCode:   req.USSDCode,
+			USSDCode:   req.USSDCode,
 			InputData:  req.InputData,
 			OutputData: response.Error,
 			Status:     "error",
@@ -1641,7 +1641,7 @@ func (h *USSDHandler) ExecuteUSSD(w http.ResponseWriter, r *http.Request) {
 	// Sauvegarder l'historique
 	history := &db.USSDHistory{
 		ModuleID:   req.ModuleID,
-		USSSCode:   req.USSDCode,
+		USSDCode:   req.USSDCode,
 		InputData:  req.InputData,
 		OutputData: response.Result,
 		Status:     "success",

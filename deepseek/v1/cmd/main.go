@@ -316,7 +316,7 @@ func executeUSSDHandler(sm *serial.Manager, dbConn *db.DB, executor *ussd.USSDEx
 		}
 		history := &db.USSDHistory{
 			ModuleID:   moduleID,
-			USSSCode:   req.USSDCode,
+			USSDCode:   req.USSDCode,
 			InputData:  req.InputData,
 			OutputData: response.Result,
 			Status:     status,

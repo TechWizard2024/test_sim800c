@@ -2954,7 +2954,7 @@ type Module struct {
 type USSDHistory struct {
 	ID         int       \`json:"id"\`
 	ModuleID   int       \`json:"module\_id"\`
-	USSSCode   string    \`json:"ussd\_code"\`
+	USSDCode   string    \`json:"ussd\_code"\`
 	InputData  string    \`json:"input\_data"\`
 	OutputData string    \`json:"output\_data"\`
 	Status     string    \`json:"status"\`

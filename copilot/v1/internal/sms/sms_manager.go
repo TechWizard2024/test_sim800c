@@ -28,6 +28,7 @@ type SMS struct {
 	ReceiverNumber string    `json:"receiver_number"`
 	Message        string    `json:"message"`
 	Direction      string    `json:"direction"`
+	IsRead         bool      `json:"is_read"`
 	IsDeleted      bool      `json:"is_deleted"`
 	IsTrash        bool      `json:"is_trash"`
 	SMSIndex       int       `json:"sms_index"`
@@ -41,6 +42,46 @@ func NewSMSManager(logger *logrus.Logger, hub *websocket.Hub, dbConn *db.DB, aut
 		db:               dbConn,
 		autoTrashKeyword: autoTrashKeyword,
 	}
+}
+
+func (m *SMSManager) SendSMSWithModule(module *serial.SIM800C, number, message string) error {
+	m.logger.Infof("Envoi SMS du module %s à %s", module.Port, number)
+
+	// Validation du numéro
+	if err := m.validateNumber(number); err != nil {
+		return err
+	}
+
+	// Envoyer via le module série
+	if err := module.SendSMS(number, message); err != nil {
+		return fmt.Errorf("erreur envoi SMS série: %w", err)
+	}
+
+	// Sauvegarder dans la base avec DBID
+	sms := &db.SMSMessage{
+		ModuleID:       module.GetEffectiveID(),
+		ReceiverNumber: number,
+		Message:        message,
+		Direction:      "out",
+		IsRead:         true,
+		ReceivedAt:     time.Now(),
+	}
+
+	if err := m.db.SaveSMS(sms); err != nil {
+		m.logger.Warnf("Erreur sauvegarde SMS: %v", err)
+	}
+
+	// Notifier via WebSocket
+	if m.hub != nil {
+		m.hub.BroadcastEvent(websocket.Event{
+			Type:      "sms_sent",
+			ModuleID:  module.ModuleID,
+			Data:      sms,
+			Timestamp: time.Now(),
+		})
+	}
+
+	return nil
 }
 
 func (m *SMSManager) SendSMS(moduleID int, number, message string) error {
@@ -57,6 +98,7 @@ func (m *SMSManager) SendSMS(moduleID int, number, message string) error {
 		ReceiverNumber: number,
 		Message:        message,
 		Direction:      "out",
+		IsRead:         true,
 		ReceivedAt:     time.Now(),
 	}
 
@@ -101,7 +143,7 @@ func (m *SMSManager) ReadSMS(module *serial.SIM800C) error {
 		}
 
 		// Vérifier si déjà en base
-		exists, _ := m.db.SMSExists(module.ModuleID, idx)
+		exists, _ := m.db.SMSExists(module.GetEffectiveID(), idx)
 		if exists {
 			continue
 		}
@@ -109,10 +151,11 @@ func (m *SMSManager) ReadSMS(module *serial.SIM800C) error {
 		isTrash := !strings.Contains(message, m.autoTrashKeyword)
 
 		sms := &db.SMSMessage{
-			ModuleID:     module.ModuleID,
+			ModuleID:     module.GetEffectiveID(),
 			SenderNumber: sender,
 			Message:      message,
 			Direction:    "in",
+			IsRead:       false,
 			IsTrash:      isTrash,
 			SMSIndex:     idx,
 			ReceivedAt:   time.Now(),
@@ -130,6 +173,23 @@ func (m *SMSManager) ReadSMS(module *serial.SIM800C) error {
 				Data:      sms,
 				Timestamp: time.Now(),
 			})
+			// Broadcast sms_auto_trash si SMS automatiquement mis en corbeille
+			if isTrash && m.autoTrashKeyword != "" {
+				preview := message
+				if len(preview) > 60 {
+					preview = preview[:60] + "..."
+				}
+				m.hub.BroadcastEvent(websocket.Event{
+					Type:     "sms_auto_trash",
+					ModuleID: module.ModuleID,
+					Data: map[string]interface{}{
+						"module_id": module.GetEffectiveID(),
+						"sender":    sender,
+						"preview":   preview,
+					},
+					Timestamp: time.Now(),
+				})
+			}
 		}
 
 		m.logger.Infof("SMS reçu de %s: %s", sender, message[:min(50, len(message))])
@@ -175,6 +235,79 @@ func (m *SMSManager) MoveToTrash(smsID int) error {
 	return nil
 }
 
+// RestoreFromTrash — restaure un SMS de la corbeille vers la boîte de réception
+func (m *SMSManager) RestoreFromTrash(smsID int) error {
+	m.logger.Infof("Restauration SMS %d depuis corbeille", smsID)
+
+	if err := m.db.RestoreSMSFromTrash(smsID); err != nil {
+		return fmt.Errorf("erreur restauration SMS: %w", err)
+	}
+
+	if m.hub != nil {
+		m.hub.BroadcastEvent(websocket.Event{
+			Type:      "sms_restored",
+			Data:      map[string]interface{}{"sms_id": smsID},
+			Timestamp: time.Now(),
+		})
+	}
+
+	return nil
+}
+
+// DeletePermanent — supprime définitivement un SMS (suppression physique en DB)
+func (m *SMSManager) DeletePermanent(smsID int) error {
+	m.logger.Infof("Suppression définitive SMS %d", smsID)
+
+	if err := m.db.DeleteSMSPermanent(smsID); err != nil {
+		return fmt.Errorf("erreur suppression définitive SMS: %w", err)
+	}
+
+	if m.hub != nil {
+		m.hub.BroadcastEvent(websocket.Event{
+			Type:      "sms_deleted_permanent",
+			Data:      map[string]interface{}{"sms_id": smsID},
+			Timestamp: time.Now(),
+		})
+	}
+
+	return nil
+}
+
+func (m *SMSManager) MarkSMSRead(smsID int) error {
+	m.logger.Infof("Marquage SMS %d comme lu", smsID)
+	if err := m.db.MarkSMSRead(smsID); err != nil {
+		return fmt.Errorf("erreur marquage SMS lu: %w", err)
+	}
+	if m.hub != nil {
+		m.hub.BroadcastEvent(websocket.Event{
+			Type:      "sms_marked_read",
+			Data:      map[string]interface{}{"sms_id": smsID},
+			Timestamp: time.Now(),
+		})
+	}
+	return nil
+}
+
+func (m *SMSManager) MarkAllSMSRead(moduleID int) error {
+	m.logger.Infof("Marquage tous les SMS du module %d comme lus", moduleID)
+	if err := m.db.MarkAllSMSRead(moduleID); err != nil {
+		return fmt.Errorf("erreur marquage tous les SMS lus: %w", err)
+	}
+	if m.hub != nil {
+		m.hub.BroadcastEvent(websocket.Event{
+			Type:      "sms_all_marked_read",
+			ModuleID:  moduleID,
+			Data:      map[string]interface{}{"module_id": moduleID},
+			Timestamp: time.Now(),
+		})
+	}
+	return nil
+}
+
+func (m *SMSManager) GetUnreadCount(moduleID int) (int, error) {
+	return m.db.GetUnreadSMSCount(moduleID)
+}
+
 func (m *SMSManager) GetSMS(moduleID int, includeTrash bool) ([]db.SMSMessage, error) {
 	return m.db.GetSMSByModule(moduleID, includeTrash)
 }
@@ -182,7 +315,7 @@ func (m *SMSManager) GetSMS(moduleID int, includeTrash bool) ([]db.SMSMessage, e
 func (m *SMSManager) AutoFilterTrash(module *serial.SIM800C) error {
 	m.logger.Infof("Filtrage automatique des SMS pour module %s", module.Port)
 
-	smsList, err := m.db.GetSMSByModule(module.ModuleID, false)
+	smsList, err := m.db.GetSMSByModule(module.GetEffectiveID(), false)
 	if err != nil {
 		return err
 	}
@@ -236,4 +369,9 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// UpdateAutoTrashKeyword — met à jour le mot-clé de filtrage automatique vers la corbeille
+func (m *SMSManager) UpdateAutoTrashKeyword(keyword string) {
+	m.autoTrashKeyword = keyword
 }

@@ -777,7 +777,7 @@ type Module struct {
 type USSDHistory struct {
 	ID         int       `json:"id"`
 	ModuleID   int       `json:"module_id"`
-	USSSCode   string    `json:"ussd_code"`
+	USSDCode   string    `json:"ussd_code"`
 	InputData  string    `json:"input_data"`
 	OutputData string    `json:"output_data"`
 	Status     string    `json:"status"`

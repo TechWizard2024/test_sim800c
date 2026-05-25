@@ -34,12 +34,6 @@ class ThemeManager {
         }
         
         localStorage.setItem('theme', theme);
-        // Also toggle a body class to support simple dark-mode fallbacks
-        if (theme === 'dark') {
-            document.body.classList.add('dark-mode');
-        } else {
-            document.body.classList.remove('dark-mode');
-        }
     }
     
     toggle() {

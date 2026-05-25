@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"sim800c-supervisor/internal/config"
@@ -26,7 +27,7 @@ type Module struct {
 type USSDHistory struct {
 	ID         int       `json:"id"`
 	ModuleID   int       `json:"module_id"`
-	USSSCode   string    `json:"ussd_code"`
+	USSDCode   string    `json:"ussd_code"`
 	InputData  string    `json:"input_data"`
 	OutputData string    `json:"output_data"`
 	Status     string    `json:"status"`
@@ -42,6 +43,7 @@ type SMSMessage struct {
 	ReceiverNumber string    `json:"receiver_number"`
 	Message        string    `json:"message"`
 	Direction      string    `json:"direction"`
+	IsRead         bool      `json:"is_read"`
 	IsDeleted      bool      `json:"is_deleted"`
 	IsTrash        bool      `json:"is_trash"`
 	SMSIndex       int       `json:"sms_index"`
@@ -81,6 +83,18 @@ type AuditLog struct {
 	Details    map[string]interface{} `json:"details"`
 	IPAddress  string                 `json:"ip_address"`
 	CreatedAt  time.Time              `json:"created_at"`
+}
+
+// DialPlan — plan de numérotation par pays et opérateur
+type DialPlan struct {
+	ID           int    `json:"id"`
+	CountryCode  string `json:"country_code"`  // ex: CI
+	CountryName  string `json:"country_name"`  // ex: Côte d'Ivoire
+	CallingCode  string `json:"calling_code"`  // ex: +225
+	NumberLength int    `json:"number_length"` // ex: 10
+	Operator     string `json:"operator"`      // ex: Orange CI
+	Prefix       string `json:"prefix"`        // ex: 07
+	IsActive     bool   `json:"is_active"`
 }
 
 //
@@ -146,6 +160,7 @@ func createTables(db *sql.DB) error {
 			receiver_number VARCHAR(20),
 			message TEXT NOT NULL,
 			direction ENUM('in', 'out') NOT NULL,
+			is_read BOOLEAN DEFAULT FALSE,
 			is_deleted BOOLEAN DEFAULT FALSE,
 			is_trash BOOLEAN DEFAULT FALSE,
 			sms_index INT,
@@ -175,12 +190,73 @@ func createTables(db *sql.DB) error {
 			created_by VARCHAR(50) DEFAULT 'system',
 			new_codes_count INT DEFAULT 0
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS ussd_favorites (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			ussd_code VARCHAR(50) NOT NULL UNIQUE,
+			operation VARCHAR(100),
+			carrier VARCHAR(50),
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		`CREATE TABLE IF NOT EXISTS users (
+			id VARCHAR(50) PRIMARY KEY,
+			username VARCHAR(50) NOT NULL UNIQUE,
+			password_hash VARCHAR(255) NOT NULL,
+			role VARCHAR(20) DEFAULT 'user',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		// Paramètres applicatifs persistants (clé/valeur)
+		`CREATE TABLE IF NOT EXISTS app_settings (
+			setting_key   VARCHAR(100) PRIMARY KEY,
+			setting_value TEXT NOT NULL,
+			updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+		// Plan de numérotation — géré en DB, validé depuis la DB
+		`CREATE TABLE IF NOT EXISTS dial_plan (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			country_code VARCHAR(5) NOT NULL,
+			country_name VARCHAR(100) NOT NULL,
+			calling_code VARCHAR(10) NOT NULL,
+			number_length INT NOT NULL DEFAULT 10,
+			operator VARCHAR(100) NOT NULL,
+			prefix VARCHAR(10) NOT NULL,
+			is_active BOOLEAN DEFAULT TRUE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY uq_country_operator_prefix (country_code, operator, prefix)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	}
 
 	for _, query := range queries {
 		if _, err := db.Exec(query); err != nil {
 			return fmt.Errorf("erreur exécution requête: %w\nRequête: %s", err, query)
 		}
+	}
+
+	// Assurer la colonne is_read pour les bases existantes
+	if _, err := db.Exec(`ALTER TABLE sms_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE`); err != nil {
+		return fmt.Errorf("erreur vérification colonne is_read: %w", err)
+	}
+
+	// Insérer les données du plan de numérotation CI si absentes
+	dialPlanData := []struct {
+		countryCode  string
+		countryName  string
+		callingCode  string
+		numberLength int
+		operator     string
+		prefix       string
+	}{
+		{"CI", "Côte d'Ivoire", "+225", 10, "Orange CI", "07"},
+		{"CI", "Côte d'Ivoire", "+225", 10, "MTN CI", "05"},
+		{"CI", "Côte d'Ivoire", "+225", 10, "Moov Africa CI", "01"},
+	}
+	for _, dp := range dialPlanData {
+		db.Exec(`INSERT IGNORE INTO dial_plan (country_code, country_name, calling_code, number_length, operator, prefix) 
+				 VALUES (?, ?, ?, ?, ?, ?)`,
+			dp.countryCode, dp.countryName, dp.callingCode, dp.numberLength, dp.operator, dp.prefix)
 	}
 
 	return nil
@@ -249,7 +325,7 @@ func (db *DB) SaveUSSDHistory(history *USSDHistory) error {
 	query := `INSERT INTO ussd_history (module_id, ussd_code, input_data, output_data, status, duration_ms, executed_by) 
 			  VALUES (?, ?, ?, ?, ?, ?, ?)`
 
-	result, err := db.Exec(query, history.ModuleID, history.USSSCode, history.InputData,
+	result, err := db.Exec(query, history.ModuleID, history.USSDCode, history.InputData,
 		history.OutputData, history.Status, history.DurationMs, history.ExecutedBy)
 	if err != nil {
 		return err
@@ -262,10 +338,18 @@ func (db *DB) SaveUSSDHistory(history *USSDHistory) error {
 
 // GetUSSDHistory - Récupère l'historique USSD
 func (db *DB) GetUSSDHistory(moduleID int, limit int) ([]USSDHistory, error) {
-	query := `SELECT id, module_id, ussd_code, input_data, output_data, status, duration_ms, executed_by, executed_at 
+	var query string
+	var rows *sql.Rows
+	var err error
+	if moduleID == 0 {
+		query = `SELECT id, module_id, ussd_code, input_data, output_data, status, duration_ms, executed_by, executed_at 
+			  FROM ussd_history ORDER BY executed_at DESC LIMIT ?`
+		rows, err = db.Query(query, limit)
+	} else {
+		query = `SELECT id, module_id, ussd_code, input_data, output_data, status, duration_ms, executed_by, executed_at 
 			  FROM ussd_history WHERE module_id = ? ORDER BY executed_at DESC LIMIT ?`
-
-	rows, err := db.Query(query, moduleID, limit)
+		rows, err = db.Query(query, moduleID, limit)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +358,7 @@ func (db *DB) GetUSSDHistory(moduleID int, limit int) ([]USSDHistory, error) {
 	var history []USSDHistory
 	for rows.Next() {
 		var h USSDHistory
-		err := rows.Scan(&h.ID, &h.ModuleID, &h.USSSCode, &h.InputData, &h.OutputData,
+		err := rows.Scan(&h.ID, &h.ModuleID, &h.USSDCode, &h.InputData, &h.OutputData,
 			&h.Status, &h.DurationMs, &h.ExecutedBy, &h.ExecutedAt)
 		if err != nil {
 			return nil, err
@@ -287,11 +371,11 @@ func (db *DB) GetUSSDHistory(moduleID int, limit int) ([]USSDHistory, error) {
 
 // SaveSMS - Sauvegarde un SMS
 func (db *DB) SaveSMS(sms *SMSMessage) error {
-	query := `INSERT INTO sms_messages (module_id, sender_number, receiver_number, message, direction, is_deleted, is_trash, sms_index) 
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO sms_messages (module_id, sender_number, receiver_number, message, direction, is_read, is_deleted, is_trash, sms_index) 
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := db.Exec(query, sms.ModuleID, sms.SenderNumber, sms.ReceiverNumber,
-		sms.Message, sms.Direction, sms.IsDeleted, sms.IsTrash, sms.SMSIndex)
+		sms.Message, sms.Direction, sms.IsRead, sms.IsDeleted, sms.IsTrash, sms.SMSIndex)
 	if err != nil {
 		return err
 	}
@@ -308,11 +392,11 @@ func (db *DB) GetSMSByModule(moduleID int, includeTrash bool) ([]SMSMessage, err
 	var err error
 
 	if includeTrash {
-		query = `SELECT id, module_id, sender_number, receiver_number, message, direction, is_deleted, is_trash, sms_index, received_at 
+		query = `SELECT id, module_id, sender_number, receiver_number, message, direction, is_read, is_deleted, is_trash, sms_index, received_at 
 				 FROM sms_messages WHERE module_id = ? ORDER BY received_at DESC`
 		rows, err = db.Query(query, moduleID)
 	} else {
-		query = `SELECT id, module_id, sender_number, receiver_number, message, direction, is_deleted, is_trash, sms_index, received_at 
+		query = `SELECT id, module_id, sender_number, receiver_number, message, direction, is_read, is_deleted, is_trash, sms_index, received_at 
 				 FROM sms_messages WHERE module_id = ? AND is_trash = FALSE ORDER BY received_at DESC`
 		rows, err = db.Query(query, moduleID)
 	}
@@ -326,7 +410,7 @@ func (db *DB) GetSMSByModule(moduleID int, includeTrash bool) ([]SMSMessage, err
 	for rows.Next() {
 		var sms SMSMessage
 		err := rows.Scan(&sms.ID, &sms.ModuleID, &sms.SenderNumber, &sms.ReceiverNumber,
-			&sms.Message, &sms.Direction, &sms.IsDeleted, &sms.IsTrash, &sms.SMSIndex, &sms.ReceivedAt)
+			&sms.Message, &sms.Direction, &sms.IsRead, &sms.IsDeleted, &sms.IsTrash, &sms.SMSIndex, &sms.ReceivedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -343,9 +427,149 @@ func (db *DB) MarkSMSDeleted(moduleID int, smsIndex int) error {
 	return err
 }
 
-// MoveSMSToTrash - Déplace un SMS vers la corbeille
 func (db *DB) MoveSMSToTrash(smsID int) error {
 	query := `UPDATE sms_messages SET is_trash = TRUE WHERE id = ?`
+	_, err := db.Exec(query, smsID)
+	return err
+}
+
+func (db *DB) MarkSMSRead(smsID int) error {
+	query := `UPDATE sms_messages SET is_read = TRUE WHERE id = ?`
+	_, err := db.Exec(query, smsID)
+	return err
+}
+
+func (db *DB) MarkAllSMSRead(moduleID int) error {
+	query := `UPDATE sms_messages SET is_read = TRUE WHERE module_id = ? AND is_trash = FALSE`
+	_, err := db.Exec(query, moduleID)
+	return err
+}
+
+func (db *DB) GetUnreadSMSCount(moduleID int) (int, error) {
+	query := `SELECT COUNT(*) FROM sms_messages WHERE module_id = ? AND is_trash = FALSE AND is_read = FALSE`
+	var count int
+	err := db.QueryRow(query, moduleID).Scan(&count)
+	return count, err
+}
+
+func (db *DB) GetAllSMS(limit int) ([]SMSMessage, error) {
+	query := `SELECT id, module_id, sender_number, receiver_number, message, direction, is_read, is_deleted, is_trash, sms_index, received_at 
+			  FROM sms_messages ORDER BY received_at DESC LIMIT ?`
+	rows, err := db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var smsList []SMSMessage
+	for rows.Next() {
+		var sms SMSMessage
+		err := rows.Scan(&sms.ID, &sms.ModuleID, &sms.SenderNumber, &sms.ReceiverNumber,
+			&sms.Message, &sms.Direction, &sms.IsRead, &sms.IsDeleted, &sms.IsTrash, &sms.SMSIndex, &sms.ReceivedAt)
+		if err != nil {
+			return nil, err
+		}
+		smsList = append(smsList, sms)
+	}
+
+	return smsList, nil
+}
+
+func (db *DB) GetRecentUSSDCodes(moduleID int, limit int) ([]string, error) {
+	var query string
+	var rows *sql.Rows
+	var err error
+	if moduleID == 0 {
+		query = `SELECT DISTINCT ussd_code FROM ussd_history ORDER BY executed_at DESC LIMIT ?`
+		rows, err = db.Query(query, limit)
+	} else {
+		query = `SELECT DISTINCT ussd_code FROM ussd_history WHERE module_id = ? ORDER BY executed_at DESC LIMIT ?`
+		rows, err = db.Query(query, moduleID, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	codes := make([]string, 0)
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		codes = append(codes, code)
+	}
+	return codes, nil
+}
+
+func (db *DB) GetAuditLogs(limit int, offset int, action, userID string) ([]AuditLog, error) {
+	query := "SELECT id, user_id, action, target_type, target_id, details, ip_address, created_at FROM audit_log"
+	clauses := []string{}
+	params := []interface{}{}
+	if action != "" {
+		clauses = append(clauses, "action = ?")
+		params = append(params, action)
+	}
+	if userID != "" {
+		clauses = append(clauses, "user_id = ?")
+		params = append(params, userID)
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	params = append(params, limit, offset)
+
+	rows, err := db.Query(query, params...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []AuditLog
+	for rows.Next() {
+		var log AuditLog
+		var detailsJSON []byte
+		if err := rows.Scan(&log.ID, &log.UserID, &log.Action, &log.TargetType, &log.TargetID, &detailsJSON, &log.IPAddress, &log.CreatedAt); err != nil {
+			return nil, err
+		}
+		json.Unmarshal(detailsJSON, &log.Details)
+		logs = append(logs, log)
+	}
+
+	return logs, nil
+}
+
+func (db *DB) GetAuditLogsCount(action, userID string) (int, error) {
+	query := "SELECT COUNT(*) FROM audit_log"
+	clauses := []string{}
+	params := []interface{}{}
+	if action != "" {
+		clauses = append(clauses, "action = ?")
+		params = append(params, action)
+	}
+	if userID != "" {
+		clauses = append(clauses, "user_id = ?")
+		params = append(params, userID)
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	var count int
+	err := db.QueryRow(query, params...).Scan(&count)
+	return count, err
+}
+
+// RestoreSMSFromTrash - Restaure un SMS depuis la corbeille vers la boîte de réception
+func (db *DB) RestoreSMSFromTrash(smsID int) error {
+	query := `UPDATE sms_messages SET is_trash = FALSE WHERE id = ?`
+	_, err := db.Exec(query, smsID)
+	return err
+}
+
+// DeleteSMSPermanent - Supprime définitivement un SMS (par son ID en base)
+func (db *DB) DeleteSMSPermanent(smsID int) error {
+	query := `DELETE FROM sms_messages WHERE id = ?`
 	_, err := db.Exec(query, smsID)
 	return err
 }
@@ -409,29 +633,6 @@ func (db *DB) SaveAuditLog(userID, action, targetType string, targetID int, deta
 	return err
 }
 
-// GetAuditLogs - Récupère les logs d'audit
-func (db *DB) GetAuditLogs(limit int) ([]AuditLog, error) {
-	query := "SELECT id, user_id, action, target_type, target_id, details, ip_address, created_at FROM audit_log ORDER BY created_at DESC LIMIT ?"
-	rows, err := db.Query(query, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var logs []AuditLog
-	for rows.Next() {
-		var log AuditLog
-		var detailsJSON []byte
-		err := rows.Scan(&log.ID, &log.UserID, &log.Action, &log.TargetType, &log.TargetID, &detailsJSON, &log.IPAddress, &log.CreatedAt)
-		if err != nil {
-			return nil, err
-		}
-		json.Unmarshal(detailsJSON, &log.Details)
-		logs = append(logs, log)
-	}
-	return logs, nil
-}
-
 // SMSExists - Vérifie si un SMS existe déjà
 func (db *DB) SMSExists(moduleID, smsIndex int) (bool, error) {
 	var count int
@@ -468,11 +669,200 @@ func (db *DB) SaveExcelVersion(filename, createdBy string, newCodesCount int) er
 	return err
 }
 
+// USSDFavorite - Favori USSD
+type USSDFavorite struct {
+	ID        int    `json:"id"`
+	USSDCode  string `json:"ussd_code"`
+	Operation string `json:"operation"`
+	Carrier   string `json:"carrier"`
+}
+
+// GetUSSDFavorites - Récupère tous les favoris
+func (db *DB) GetUSSDFavorites() ([]USSDFavorite, error) {
+	rows, err := db.Query("SELECT id, ussd_code, operation, carrier FROM ussd_favorites ORDER BY created_at DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var favs []USSDFavorite
+	for rows.Next() {
+		var f USSDFavorite
+		if err := rows.Scan(&f.ID, &f.USSDCode, &f.Operation, &f.Carrier); err != nil {
+			continue
+		}
+		favs = append(favs, f)
+	}
+	if favs == nil {
+		favs = []USSDFavorite{}
+	}
+	return favs, nil
+}
+
+// SaveUSSDFavorite - Ajoute un favori
+func (db *DB) SaveUSSDFavorite(code, operation, carrier string) error {
+	query := `INSERT INTO ussd_favorites (ussd_code, operation, carrier) VALUES (?, ?, ?)
+		ON DUPLICATE KEY UPDATE operation = VALUES(operation), carrier = VALUES(carrier)`
+	_, err := db.Exec(query, code, operation, carrier)
+	return err
+}
+
+// DeleteUSSDFavorite - Supprime un favori par ID
+func (db *DB) DeleteUSSDFavorite(id int) error {
+	_, err := db.Exec("DELETE FROM ussd_favorites WHERE id = ?", id)
+	return err
+}
+
 func generateUUID() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
+// GetSetting — récupère un paramètre applicatif persistant
+func (db *DB) GetSetting(key string) (string, error) {
+	var value string
+	err := db.QueryRow("SELECT setting_value FROM app_settings WHERE setting_key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return value, err
+}
+
+// SetSetting — enregistre ou met à jour un paramètre applicatif persistant
+func (db *DB) SetSetting(key, value string) error {
+	_, err := db.Exec(
+		`INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+		 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+		key, value,
+	)
+	return err
+}
+
+// GetAllSettings — récupère tous les paramètres applicatifs
+func (db *DB) GetAllSettings() (map[string]string, error) {
+	rows, err := db.Query("SELECT setting_key, setting_value FROM app_settings")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	settings := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			continue
+		}
+		settings[k] = v
+	}
+	return settings, nil
+}
+
+// GetDialPlan - Récupère le plan de numérotation depuis la base de données
+func (db *DB) GetDialPlan() ([]DialPlan, error) {
+	query := `SELECT id, country_code, country_name, calling_code, number_length, operator, prefix, is_active 
+			  FROM dial_plan WHERE is_active = TRUE ORDER BY country_code, operator`
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var plans []DialPlan
+	for rows.Next() {
+		var p DialPlan
+		if err := rows.Scan(&p.ID, &p.CountryCode, &p.CountryName, &p.CallingCode, &p.NumberLength, &p.Operator, &p.Prefix, &p.IsActive); err != nil {
+			continue
+		}
+		plans = append(plans, p)
+	}
+	return plans, nil
+}
+
+// ValidatePhoneNumber — valide un numéro de téléphone selon le plan de numérotation en DB
+// Retourne l'opérateur détecté ou "" si invalide
+func (db *DB) ValidatePhoneNumber(countryCode, number string) (string, error) {
+	if len(number) == 0 {
+		return "", fmt.Errorf("numéro vide")
+	}
+	// Strip country prefix if present
+	stripped := number
+	if len(stripped) > 10 {
+		stripped = stripped[len(stripped)-10:]
+	}
+	rows, err := db.Query(`SELECT operator, prefix, number_length FROM dial_plan WHERE country_code = ? AND is_active = TRUE`, countryCode)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var operator, prefix string
+		var length int
+		rows.Scan(&operator, &prefix, &length)
+		if len(stripped) == length && len(prefix) <= len(stripped) && stripped[:len(prefix)] == prefix {
+			return operator, nil
+		}
+	}
+	return "", fmt.Errorf("numéro non reconnu dans le plan de numérotation %s", countryCode)
+}
+
 //
 // Added 21052026-2002
+
+// CreateDialPlanEntry — ajoute une nouvelle entrée au plan de numérotation
+func (db *DB) CreateDialPlanEntry(entry *DialPlan) error {
+	if entry.NumberLength == 0 {
+		entry.NumberLength = 10
+	}
+	result, err := db.Exec(
+		`INSERT INTO dial_plan (country_code, country_name, calling_code, number_length, operator, prefix, is_active)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		entry.CountryCode, entry.CountryName, entry.CallingCode, entry.NumberLength,
+		entry.Operator, entry.Prefix, true,
+	)
+	if err != nil {
+		return err
+	}
+	id, _ := result.LastInsertId()
+	entry.ID = int(id)
+	entry.IsActive = true
+	return nil
+}
+
+// UpdateDialPlanEntry — met à jour une entrée du plan de numérotation
+func (db *DB) UpdateDialPlanEntry(entry *DialPlan) error {
+	_, err := db.Exec(
+		`UPDATE dial_plan SET country_code=?, country_name=?, calling_code=?, number_length=?, operator=?, prefix=?, is_active=? WHERE id=?`,
+		entry.CountryCode, entry.CountryName, entry.CallingCode, entry.NumberLength,
+		entry.Operator, entry.Prefix, entry.IsActive, entry.ID,
+	)
+	return err
+}
+
+// DeleteDialPlanEntry — supprime une entrée du plan de numérotation (soft delete via is_active=false)
+func (db *DB) DeleteDialPlanEntry(id int) error {
+	_, err := db.Exec(`UPDATE dial_plan SET is_active = FALSE WHERE id = ?`, id)
+	return err
+}
+
+// GetSMSMessages — récupère les SMS d'un module avec limite pour export
+func (db *DB) GetSMSMessages(moduleID, limit int) ([]SMSMessage, error) {
+	query := `SELECT id, module_id, sender_number, receiver_number, message, direction, is_read, is_deleted, is_trash, sms_index, received_at
+			  FROM sms_messages WHERE module_id = ? AND is_deleted = FALSE ORDER BY received_at DESC LIMIT ?`
+	rows, err := db.Query(query, moduleID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var msgs []SMSMessage
+	for rows.Next() {
+		var m SMSMessage
+		if err := rows.Scan(&m.ID, &m.ModuleID, &m.SenderNumber, &m.ReceiverNumber, &m.Message,
+			&m.Direction, &m.IsRead, &m.IsDeleted, &m.IsTrash, &m.SMSIndex, &m.ReceivedAt); err != nil {
+			continue
+		}
+		msgs = append(msgs, m)
+	}
+	if msgs == nil {
+		msgs = []SMSMessage{}
+	}
+	return msgs, nil
+}

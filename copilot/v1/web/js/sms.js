@@ -4,15 +4,46 @@ class SMSManager {
         this.currentModuleId = null;
         this.currentTab = 'inbox';
         this.smsData = { inbox: [], trash: [] };
+        this.dialPlan = []; // chargé depuis /api/dialplan
         this.init();
     }
     
-    init() {
+    async init() {
         this.setupEventListeners();
         this.loadModules();
+        await this.loadDialPlan();
         
         // Rafraîchir périodiquement
         setInterval(() => this.loadSMS(), 10000);
+    }
+
+    async loadDialPlan() {
+        try {
+            const resp = await fetch('/api/dialplan');
+            if (resp.ok) {
+                this.dialPlan = await resp.json();
+            }
+        } catch (e) {
+            console.warn('Dial plan non disponible, validation statique CI active', e);
+        }
+    }
+
+    // Valide un numéro de téléphone selon le plan de numérotation chargé (ou fallback CI)
+    validatePhoneNumber(number) {
+        const stripped = number.replace(/^(\+225|00225|225)/, '').trim();
+        if (this.dialPlan && this.dialPlan.length > 0) {
+            for (const entry of this.dialPlan) {
+                if (stripped.length === entry.number_length && stripped.startsWith(entry.prefix)) {
+                    return { valid: true, operator: entry.operator };
+                }
+            }
+            return { valid: false, message: 'Numéro non reconnu dans le plan de numérotation.' };
+        }
+        // Fallback CI hardcodé
+        if (/^0[157]\d{8}$/.test(stripped)) {
+            return { valid: true };
+        }
+        return { valid: false, message: 'Numéro CI invalide (10 chiffres, préfixe 01/05/07).' };
     }
     
     setupEventListeners() {
@@ -29,7 +60,7 @@ class SMSManager {
         }
         
         // Filtre par module
-        const moduleSelect = document.getElementById('sms-module-select');
+        const moduleSelect = document.getElementById('sms-module-filter');
         if (moduleSelect) {
             moduleSelect.addEventListener('change', () => this.loadSMS());
         }
@@ -39,6 +70,11 @@ class SMSManager {
         if (searchInput) {
             searchInput.addEventListener('input', () => this.filterSMS());
         }
+
+        const markAllReadBtn = document.getElementById('sms-mark-all-read-btn');
+        if (markAllReadBtn) {
+            markAllReadBtn.addEventListener('click', () => this.markAllRead());
+        }
         
         // Onglets SMS
         document.querySelectorAll('.sms-tab-btn').forEach(btn => {
@@ -47,6 +83,12 @@ class SMSManager {
                 this.switchTab(tab);
             });
         });
+
+        // Export SMS CSV depuis SMS Manager
+        const exportBtn = document.getElementById('sms-export-btn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => this.exportSMSCSV());
+        }
     }
     
     async loadModules() {
@@ -54,22 +96,57 @@ class SMSManager {
             const response = await fetch('/api/modules');
             const modules = await response.json();
             
-            const select = document.getElementById('sms-module-select');
-            if (select) {
+            const sendSelect = document.getElementById('sms-module');
+            if (sendSelect) {
+                let options = '';
+                modules.forEach(module => {
+                    const id = module.module_id || module.port;
+                    options += `<option value="${id}">${module.port || id} - ${module.phone_number || 'No SIM'}</option>`;
+                });
+                sendSelect.innerHTML = options;
+            }
+
+            const filterSelect = document.getElementById('sms-module-filter');
+            if (filterSelect) {
                 let options = '<option value="all">Tous les modules</option>';
                 modules.forEach(module => {
                     const id = module.module_id || module.port;
                     options += `<option value="${id}">${module.port || id} - ${module.phone_number || 'No SIM'}</option>`;
                 });
-                select.innerHTML = options;
+                filterSelect.innerHTML = options;
+            }
+
+            const exportSelect = document.getElementById('sms-export-module-select');
+            if (exportSelect) {
+                let opts = '<option value="">Sélectionner module...</option>';
+                modules.forEach(module => {
+                    const id = module.module_id || module.port;
+                    opts += `<option value="${id}">${module.port || id} - ${module.phone_number || 'No SIM'}</option>`;
+                });
+                exportSelect.innerHTML = opts;
             }
         } catch (error) {
             console.error('Erreur chargement modules:', error);
         }
     }
+
+    exportSMSCSV() {
+        const select = document.getElementById('sms-export-module-select');
+        const moduleId = select?.value;
+        if (!moduleId) {
+            alert('⚠️ Veuillez sélectionner un module pour l\'export CSV.');
+            return;
+        }
+        const link = document.createElement('a');
+        link.href = `/api/modules/${moduleId}/sms/export`;
+        link.download = `sms_module${moduleId}_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
     
     async loadSMS() {
-        const moduleSelect = document.getElementById('sms-module-select');
+        const moduleSelect = document.getElementById('sms-module-filter');
         const moduleId = moduleSelect?.value || 'all';
         
         try {
@@ -117,9 +194,12 @@ class SMSManager {
     updateCounts() {
         const inboxCount = document.getElementById('inbox-count');
         const trashCount = document.getElementById('trash-count');
+        const unreadBadge = document.getElementById('sms-unread-count');
+        const unreadCount = this.smsData.inbox.filter(sms => !sms.is_read).length;
         
         if (inboxCount) inboxCount.textContent = this.smsData.inbox.length;
         if (trashCount) trashCount.textContent = this.smsData.trash.length;
+        if (unreadBadge) unreadBadge.textContent = `${unreadCount} non lus`;
     }
     
     render() {
@@ -135,8 +215,9 @@ class SMSManager {
         
         let html = '';
         for (const sms of currentData) {
+            const readBadge = sms.is_read ? '<span class="sms-status read">Lu</span>' : '<span class="sms-status unread">Non lu</span>';
             html += `
-                <div class="sms-item" data-sms-id="${sms.id}">
+                <div class="sms-item ${!sms.is_read && this.currentTab === 'inbox' ? 'sms-unread' : ''}" data-sms-id="${sms.id}">
                     <div class="sms-header">
                         <div class="sms-sender">
                             <strong>${this.currentTab === 'inbox' ? '📩 ' + (sms.sender_number || 'Inconnu') : '🗑️ ' + (sms.sender_number || 'Inconnu')}</strong>
@@ -145,12 +226,14 @@ class SMSManager {
                         <div class="sms-date">${new Date(sms.received_at).toLocaleString()}</div>
                     </div>
                     <div class="sms-content">${this.escapeHtml(sms.message)}</div>
+                    <div class="sms-meta">${this.currentTab === 'inbox' ? readBadge : ''}</div>
                     <div class="sms-actions">
                         ${this.currentTab === 'trash' ? 
                             `<button class="btn-sm btn-restore" data-id="${sms.id}">↩️ Restaurer</button>
                              <button class="btn-sm btn-delete-permanent" data-id="${sms.id}">🗑️ Supprimer définitivement</button>` :
                             `<button class="btn-sm btn-reply" data-number="${sms.sender_number}">↩️ Répondre</button>
                              <button class="btn-sm btn-trash" data-id="${sms.id}">📂 Corbeille</button>
+                             ${sms.is_read ? '' : `<button class="btn-sm btn-mark-read" data-id="${sms.id}">👁️ Marquer lu</button>`}
                              <button class="btn-sm btn-delete" data-id="${sms.id}" data-index="${sms.sms_index}">❌ Supprimer</button>`
                         }
                     </div>
@@ -183,6 +266,13 @@ class SMSManager {
                     const id = btn.dataset.id;
                     const index = btn.dataset.index;
                     this.deleteSMS(id, index);
+                });
+            });
+            
+            document.querySelectorAll('.btn-mark-read').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = btn.dataset.id;
+                    this.markAsRead(id);
                 });
             });
         } else {
@@ -287,9 +377,16 @@ class SMSManager {
         form.onsubmit = async (e) => {
             e.preventDefault();
             const moduleId = document.getElementById('modal-sms-module').value;
-            const number = document.getElementById('modal-sms-number').value;
-            const message = document.getElementById('modal-sms-message').value;
-            
+            const number = document.getElementById('modal-sms-number').value.trim();
+            const message = document.getElementById('modal-sms-message').value.trim();
+
+            // Validation dynamique du numéro via plan de numérotation
+            const validation = this.validatePhoneNumber(number);
+            if (!validation.valid) {
+                alert('❌ Numéro invalide: ' + validation.message);
+                return;
+            }
+
             await this.sendSMS(moduleId, number, message);
             modal.remove();
             this.loadSMS();
@@ -406,14 +503,79 @@ class SMSManager {
     }
     
     async restoreFromTrash(smsId) {
-        // Implémenter la restauration
-        this.loadSMS();
+        try {
+            const response = await fetch(`/api/sms/restore/${smsId}`, { method: 'POST' });
+            if (response.ok) {
+                this.showToast('✅ SMS restauré dans la boîte de réception', 'success');
+                this.loadSMS();
+            } else {
+                const err = await response.text();
+                this.showToast('❌ Erreur restauration: ' + err, 'error');
+            }
+        } catch (error) {
+            console.error('Erreur restauration SMS:', error);
+        }
+    }
+
+    async markAsRead(smsId) {
+        try {
+            const response = await fetch(`/api/sms/mark-read/${smsId}`, { method: 'POST' });
+            if (response.ok) {
+                this.loadSMS();
+            } else {
+                const err = await response.text();
+                this.showToast('❌ Erreur marquer lu: ' + err, 'error');
+            }
+        } catch (error) {
+            console.error('Erreur marquer SMS lu:', error);
+        }
+    }
+
+    async markAllRead() {
+        const moduleSelect = document.getElementById('sms-module-filter');
+        const moduleId = moduleSelect?.value;
+        if (!moduleId || moduleId === 'all') {
+            alert('Sélectionnez un module pour marquer tous les SMS lus.');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/modules/${moduleId}/sms/mark-all-read`, { method: 'POST' });
+            if (response.ok) {
+                this.showToast('✅ Tous les SMS du module sont maintenant marqués comme lus', 'success');
+                this.loadSMS();
+            } else {
+                const err = await response.text();
+                this.showToast('❌ Erreur marquer tous lus: ' + err, 'error');
+            }
+        } catch (error) {
+            console.error('Erreur marquer tous les SMS lus:', error);
+        }
     }
     
     async deletePermanent(smsId) {
-        if (!confirm('Supprimer définitivement ce SMS ?')) return;
-        // Implémenter la suppression définitive
-        this.loadSMS();
+        if (!confirm('⚠️ Supprimer définitivement ce SMS ? Cette action est irréversible.')) return;
+        try {
+            const response = await fetch(`/api/sms/delete-permanent/${smsId}`, { method: 'DELETE' });
+            if (response.ok) {
+                this.showToast('🗑️ SMS supprimé définitivement', 'success');
+                this.loadSMS();
+            } else {
+                const err = await response.text();
+                this.showToast('❌ Erreur suppression: ' + err, 'error');
+            }
+        } catch (error) {
+            console.error('Erreur suppression définitive SMS:', error);
+        }
+    }
+    
+    showToast(message, type = 'info') {
+        // Use global toast if available, otherwise fallback to console
+        if (window.app && window.app.showToast) {
+            window.app.showToast(message, type);
+        } else {
+            console.log(`[SMS Toast ${type}] ${message}`);
+        }
     }
     
     addSMS(sms) {

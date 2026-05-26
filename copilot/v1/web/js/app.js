@@ -396,6 +396,12 @@ class SIM800CApp {
             case 'sms_deleted_permanent':
                 if (window.smsManager) window.smsManager.loadSMS();
                 break;
+            // MICRO-BLOC A3 — Mise à jour badge non-lus via WebSocket
+            case 'sms_unread_count':
+                if (window.smsManager && event.data) {
+                    window.smsManager.setUnreadBadge(event.data.unread_count || 0);
+                }
+                break;
             case 'config_updated': {
                 const changedStr = (event.data.changed || []).join(', ');
                 this.showNotification(`⚙️ Configuration mise à jour: ${changedStr}`, 'success');

@@ -93,6 +93,7 @@ CREATE TABLE `sms_messages` (
   `receiver_number` varchar(20) DEFAULT NULL,
   `message` text NOT NULL,
   `direction` enum('in','out') NOT NULL,
+  `is_read` tinyint(1) DEFAULT 0,
   `is_deleted` tinyint(1) DEFAULT 0,
   `is_trash` tinyint(1) DEFAULT 0,
   `sms_index` int(11) DEFAULT NULL,

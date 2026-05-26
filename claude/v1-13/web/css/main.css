@@ -1,0 +1,703 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.app-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Header */
+.main-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.logo {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.logo h1 {
+    font-size: 1.8rem;
+    color: var(--text-primary);
+}
+
+.version {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.header-controls {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 5px;
+    transition: background-color 0.3s;
+}
+
+.btn-icon:hover {
+    background-color: var(--hover-bg);
+}
+
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: gray;
+}
+
+.status-dot.connected {
+    background-color: #4caf50;
+    box-shadow: 0 0 5px #4caf50;
+}
+
+.status-dot.disconnected {
+    background-color: #f44336;
+}
+
+/* Navigation */
+.main-nav {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 30px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+}
+
+.nav-btn {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    border-radius: 5px;
+    transition: all 0.3s;
+    color: var(--text-primary);
+}
+
+.nav-btn:hover {
+    background-color: var(--hover-bg);
+}
+
+.nav-btn.active {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+/* Tab content */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Modules grid */
+.modules-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.module-card {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 20px;
+    background-color: var(--card-bg);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.module-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.card-header h3 {
+    color: var(--text-primary);
+}
+
+.status-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.status-badge.connected {
+    background-color: #4caf50;
+    color: white;
+}
+
+.status-badge.disconnected {
+    background-color: #f44336;
+    color: white;
+}
+
+.status-badge.error {
+    background-color: #ff9800;
+    color: white;
+}
+
+.sim-info {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: var(--info-bg);
+    border-radius: 5px;
+}
+
+.sim-info p {
+    margin: 5px 0;
+    font-size: 0.9rem;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: opacity 0.3s;
+}
+
+.btn-sm:hover {
+    opacity: 0.8;
+}
+
+.results {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: var(--result-bg);
+    border-radius: 5px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.results pre {
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Global actions */
+.global-actions {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: var(--card-bg);
+    border-radius: 10px;
+}
+
+.btn-primary, .btn-secondary, .btn-danger {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.btn-secondary {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+.btn-danger {
+    background-color: #f44336;
+    color: white;
+}
+
+.btn-primary:hover, .btn-secondary:hover, .btn-danger:hover {
+    opacity: 0.8;
+    transform: translateY(-1px);
+}
+
+/* SMS Manager */
+.sms-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.sms-filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.search-input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+}
+
+.sms-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.sms-tab-btn {
+    padding: 8px 16px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+    color: var(--text-primary);
+    position: relative;
+}
+
+.sms-tab-btn.active {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    background-color: rgba(0,0,0,0.2);
+}
+
+.sms-list {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.sms-item {
+    padding: 15px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background-color: var(--card-bg);
+}
+
+.sms-item .sms-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.sms-item .sms-content {
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+
+.sms-item .sms-actions {
+    display: flex;
+    gap: 10px;
+}
+
+/* USSD Manager */
+.ussd-header {
+    margin-bottom: 20px;
+}
+
+.ussd-form {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.module-select, .ussd-input {
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+}
+
+.ussd-input {
+    flex: 1;
+    min-width: 200px;
+}
+
+.ussd-result {
+    margin-top: 20px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background-color: var(--card-bg);
+}
+
+.ussd-result h3 {
+    margin-bottom: 10px;
+}
+
+#ussd-output {
+    padding: 10px;
+    background-color: var(--result-bg);
+    border-radius: 5px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+
+.favorites-section {
+    margin-top: 30px;
+}
+
+.favorites-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.favorite-item {
+    padding: 5px 10px;
+    background-color: var(--primary-color);
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+    background-color: var(--card-bg);
+    margin: 10% auto;
+    padding: 20px;
+    width: 500px;
+    max-width: 90%;
+    border-radius: 10px;
+    position: relative;
+}
+
+.close {
+    position: absolute;
+    right: 20px;
+    top: 10px;
+    font-size: 28px;
+    cursor: pointer;
+}
+
+.modal-content form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.modal-content label {
+    font-weight: bold;
+}
+
+.modal-content input, .modal-content select, .modal-content textarea {
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+}
+
+/* Loading */
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-secondary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .modules-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .global-actions {
+        flex-direction: column;
+    }
+    
+    .ussd-form {
+        flex-direction: column;
+    }
+    
+    .main-nav {
+        flex-wrap: wrap;
+    }
+}
+
+/* ─── Signal & Network status ─────────────────────────────────────────────── */
+.pin-ok    { color: var(--success, #28a745); font-weight: 600; }
+.pin-locked { color: var(--warning, #ffc107); font-weight: 600; }
+.pin-error  { color: var(--danger, #dc3545); font-weight: 600; }
+
+.signal-strong { color: var(--success, #28a745); }
+.signal-medium { color: var(--warning, #ffc107); }
+.signal-weak   { color: var(--danger,  #dc3545); }
+.signal-none   { color: var(--text-secondary, #999); }
+
+.network-registered  { color: var(--success, #28a745); }
+.network-roaming     { color: var(--info,    #17a2b8); }
+.network-searching   { color: var(--warning, #ffc107); }
+.network-denied      { color: var(--danger,  #dc3545); }
+.network-not_registered { color: var(--danger, #dc3545); }
+.network-unknown     { color: var(--text-secondary, #999); }
+
+/* ─── Live Progress (Auto-Status / Auto-Menu) ─────────────────────────────── */
+.live-progress-item {
+    padding: 8px 12px;
+    margin: 4px 0;
+    border-left: 3px solid var(--primary, #007bff);
+    background: var(--card-bg, #fff);
+    border-radius: 0 4px 4px 0;
+    font-size: 0.9rem;
+}
+.live-progress-item.exploring { border-left-color: var(--warning, #ffc107); }
+.live-progress-item.done      { border-left-color: var(--success, #28a745); }
+.live-port  { color: var(--text-secondary, #888); font-size: 0.8rem; margin-right: 6px; }
+.live-op    { font-weight: 600; margin-right: 6px; }
+.live-result {
+    margin: 4px 0 0;
+    padding: 6px;
+    background: var(--bg, #f8f9fa);
+    border-radius: 3px;
+    font-size: 0.82rem;
+    max-height: 120px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+/* ─── Countdown timer menu USSD ───────────────────────────── */
+.menu-countdown {
+    display: inline-block;
+    background: var(--card-bg, #fff);
+    border: 2px solid var(--primary, #007bff);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--primary, #007bff);
+    margin-bottom: 8px;
+    transition: border-color 0.3s, color 0.3s;
+}
+.menu-countdown .countdown-sec.urgent {
+    color: #dc3545;
+    animation: pulse-countdown 0.5s infinite alternate;
+}
+.menu-countdown.expired {
+    border-color: #6c757d;
+    color: #6c757d;
+}
+@keyframes pulse-countdown {
+    from { opacity: 1; }
+    to   { opacity: 0.5; }
+}
+
+/* ─── Auto-Status per module button ───────────────────────── */
+.btn-auto-status {
+    background: linear-gradient(135deg, #6f42c1, #5a32a3) !important;
+    color: #fff !important;
+    border-color: #5a32a3 !important;
+}
+.btn-auto-status:hover {
+    background: linear-gradient(135deg, #5a32a3, #4b2a8a) !important;
+}
+
+/* ─── History tab styles ───────────────────────────────────── */
+#ussd-history-list .history-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border, #dee2e6);
+    font-size: 0.87rem;
+}
+#ussd-history-list .history-row:last-child { border-bottom: none; }
+#ussd-history-list .history-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    color: var(--text-muted, #6c757d);
+    font-size: 0.78rem;
+}
+#ussd-history-list .history-code {
+    font-weight: 700;
+    color: var(--primary, #007bff);
+}
+#ussd-history-list .history-result {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text, #333);
+}
+
+/* ── Auto-Menu button ──────────────────────────────────────────────── */
+.btn-auto-menu {
+    background: linear-gradient(135deg, #11998e, #38ef7d) !important;
+    color: white !important;
+    font-weight: 600;
+}
+.btn-auto-menu:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+
+/* ── Dialplan table ────────────────────────────────────────────────── */
+.dialplan-table th, .dialplan-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border, #eee);
+    text-align: left;
+    font-size: 13px;
+}
+.dialplan-table tr:hover td {
+    background: var(--hover-bg, rgba(102,126,234,0.06));
+}
+
+/* ── Settings export SMS link as button ────────────────────────────── */
+.btn-export-sms {
+    display: inline-block;
+    padding: 5px 10px;
+    background: var(--card-bg, #f5f5f5);
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    text-decoration: none;
+    color: var(--text, #333);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.btn-export-sms:hover {
+    background: var(--hover-bg, #e8ecff);
+}
+/* ── System status cards ─────────────────────────────────────────── */
+.sys-stat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 16px;
+    background: var(--hover-bg, rgba(102,126,234,0.06));
+    border: 1px solid var(--border, #ddd);
+    border-radius: 8px;
+    min-width: 140px;
+}
+.sys-stat-label {
+    font-size: 11px;
+    color: var(--text-secondary, #666);
+    white-space: nowrap;
+}
+.sys-stat-val {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text, #222);
+}
+
+/* ── Pagination controls (history) ──────────────────────────────── */
+.pagination-controls {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 10px 0;
+    justify-content: center;
+}
+.pagination-info {
+    font-size: 0.85rem;
+    color: var(--text-secondary, #666);
+    margin-right: 6px;
+}
+.pagination-ellipsis {
+    padding: 0 4px;
+    color: var(--text-secondary, #666);
+}
+.pagination-btn {
+    min-width: 32px;
+    padding: 4px 8px;
+    background: var(--hover-bg, #f0f0f0);
+    border: 1px solid var(--border, #ddd);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text, #333);
+    font-size: 0.82rem;
+    transition: background 0.15s;
+}
+.pagination-btn:hover:not(:disabled) {
+    background: var(--primary, #667eea);
+    color: #fff;
+    border-color: var(--primary, #667eea);
+}
+.pagination-btn.active {
+    background: var(--primary, #667eea);
+    color: #fff;
+    border-color: var(--primary, #667eea);
+    font-weight: 700;
+}
+.pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* ── Exploring badge animation ──────────────────────────────────── */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}

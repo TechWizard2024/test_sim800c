@@ -60,7 +60,7 @@ class SMSManager {
         }
         
         // Filtre par module
-        const moduleSelect = document.getElementById('sms-module-filter');
+        const moduleSelect = document.getElementById('sms-module-select');
         if (moduleSelect) {
             moduleSelect.addEventListener('change', () => this.loadSMS());
         }
@@ -69,11 +69,6 @@ class SMSManager {
         const searchInput = document.getElementById('sms-search');
         if (searchInput) {
             searchInput.addEventListener('input', () => this.filterSMS());
-        }
-
-        const markAllReadBtn = document.getElementById('sms-mark-all-read-btn');
-        if (markAllReadBtn) {
-            markAllReadBtn.addEventListener('click', () => this.markAllRead());
         }
         
         // Onglets SMS
@@ -89,6 +84,12 @@ class SMSManager {
         if (exportBtn) {
             exportBtn.addEventListener('click', () => this.exportSMSCSV());
         }
+
+        // MICRO-BLOC A3 — Bouton "Tout marquer comme lu"
+        const markAllReadBtn = document.getElementById('sms-mark-all-read-btn');
+        if (markAllReadBtn) {
+            markAllReadBtn.addEventListener('click', () => this.markAllRead());
+        }
     }
     
     async loadModules() {
@@ -96,26 +97,17 @@ class SMSManager {
             const response = await fetch('/api/modules');
             const modules = await response.json();
             
-            const sendSelect = document.getElementById('sms-module');
-            if (sendSelect) {
-                let options = '';
-                modules.forEach(module => {
-                    const id = module.module_id || module.port;
-                    options += `<option value="${id}">${module.port || id} - ${module.phone_number || 'No SIM'}</option>`;
-                });
-                sendSelect.innerHTML = options;
-            }
-
-            const filterSelect = document.getElementById('sms-module-filter');
-            if (filterSelect) {
+            const select = document.getElementById('sms-module-select');
+            if (select) {
                 let options = '<option value="all">Tous les modules</option>';
                 modules.forEach(module => {
                     const id = module.module_id || module.port;
                     options += `<option value="${id}">${module.port || id} - ${module.phone_number || 'No SIM'}</option>`;
                 });
-                filterSelect.innerHTML = options;
+                select.innerHTML = options;
             }
 
+            // Also populate export module select
             const exportSelect = document.getElementById('sms-export-module-select');
             if (exportSelect) {
                 let opts = '<option value="">Sélectionner module...</option>';
@@ -146,7 +138,7 @@ class SMSManager {
     }
     
     async loadSMS() {
-        const moduleSelect = document.getElementById('sms-module-filter');
+        const moduleSelect = document.getElementById('sms-module-select');
         const moduleId = moduleSelect?.value || 'all';
         
         try {
@@ -194,12 +186,33 @@ class SMSManager {
     updateCounts() {
         const inboxCount = document.getElementById('inbox-count');
         const trashCount = document.getElementById('trash-count');
-        const unreadBadge = document.getElementById('sms-unread-count');
-        const unreadCount = this.smsData.inbox.filter(sms => !sms.is_read).length;
         
         if (inboxCount) inboxCount.textContent = this.smsData.inbox.length;
         if (trashCount) trashCount.textContent = this.smsData.trash.length;
-        if (unreadBadge) unreadBadge.textContent = `${unreadCount} non lus`;
+
+        // MICRO-BLOC A3 — Mettre à jour le badge non-lus
+        const unreadCount = this.smsData.inbox.filter(s => s.direction === 'in' && !s.is_read).length;
+        this.updateUnreadBadge(unreadCount);
+    }
+
+    // MICRO-BLOC A3 — Met à jour tous les badges non-lus (onglet nav + inline)
+    updateUnreadBadge(count) {
+        const badgeTab = document.getElementById('sms-unread-badge');
+        const badgeInline = document.getElementById('sms-unread-badge-inline');
+        const markAllBtn = document.getElementById('sms-mark-all-read-btn');
+
+        if (badgeTab) {
+            badgeTab.textContent = count > 99 ? '99+' : count;
+            badgeTab.style.display = count > 0 ? 'inline-flex' : 'none';
+        }
+        if (badgeInline) {
+            badgeInline.textContent = count > 99 ? '99+' : count;
+            badgeInline.style.display = count > 0 ? 'inline-flex' : 'none';
+        }
+        // Afficher le bouton "Tout marquer comme lu" seulement s'il y a des non-lus
+        if (markAllBtn) {
+            markAllBtn.style.display = count > 0 ? 'inline-block' : 'none';
+        }
     }
     
     render() {
@@ -215,25 +228,29 @@ class SMSManager {
         
         let html = '';
         for (const sms of currentData) {
-            const readBadge = sms.is_read ? '<span class="sms-status read">Lu</span>' : '<span class="sms-status unread">Non lu</span>';
+            // MICRO-BLOC A3 — Déterminer si le SMS est non-lu (entrant + is_read == false)
+            const isUnread = (sms.direction === 'in' && !sms.is_read);
+            const unreadClass = isUnread ? ' sms-unread' : '';
+            const unreadDot = isUnread ? '<span class="sms-unread-dot" title="Non lu"></span>' : '';
+
             html += `
-                <div class="sms-item ${!sms.is_read && this.currentTab === 'inbox' ? 'sms-unread' : ''}" data-sms-id="${sms.id}">
+                <div class="sms-item${unreadClass}" data-sms-id="${sms.id}">
                     <div class="sms-header">
-                        <div class="sms-sender">
+                        <div class="sms-sender" style="display:flex;align-items:center;gap:4px;">
+                            ${unreadDot}
                             <strong>${this.currentTab === 'inbox' ? '📩 ' + (sms.sender_number || 'Inconnu') : '🗑️ ' + (sms.sender_number || 'Inconnu')}</strong>
                             ${sms.module_id ? `<span class="sms-module">Module ${sms.module_id}</span>` : ''}
                         </div>
                         <div class="sms-date">${new Date(sms.received_at).toLocaleString()}</div>
                     </div>
                     <div class="sms-content">${this.escapeHtml(sms.message)}</div>
-                    <div class="sms-meta">${this.currentTab === 'inbox' ? readBadge : ''}</div>
                     <div class="sms-actions">
                         ${this.currentTab === 'trash' ? 
                             `<button class="btn-sm btn-restore" data-id="${sms.id}">↩️ Restaurer</button>
                              <button class="btn-sm btn-delete-permanent" data-id="${sms.id}">🗑️ Supprimer définitivement</button>` :
-                            `<button class="btn-sm btn-reply" data-number="${sms.sender_number}">↩️ Répondre</button>
+                            `${isUnread ? `<button class="btn-mark-read" data-id="${sms.id}" data-module="${sms.module_id || ''}" title="Marquer comme lu">✓ Lu</button>` : ''}
+                             <button class="btn-sm btn-reply" data-number="${sms.sender_number}">↩️ Répondre</button>
                              <button class="btn-sm btn-trash" data-id="${sms.id}">📂 Corbeille</button>
-                             ${sms.is_read ? '' : `<button class="btn-sm btn-mark-read" data-id="${sms.id}">👁️ Marquer lu</button>`}
                              <button class="btn-sm btn-delete" data-id="${sms.id}" data-index="${sms.sms_index}">❌ Supprimer</button>`
                         }
                     </div>
@@ -247,6 +264,15 @@ class SMSManager {
     
     attachSMSEvents() {
         if (this.currentTab === 'inbox') {
+            // MICRO-BLOC A3 — Boutons "✓ Lu" par SMS
+            document.querySelectorAll('.btn-mark-read').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = parseInt(btn.dataset.id);
+                    const moduleId = parseInt(btn.dataset.module) || 0;
+                    this.markRead(id, moduleId);
+                });
+            });
+
             document.querySelectorAll('.btn-reply').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const number = btn.dataset.number;
@@ -266,13 +292,6 @@ class SMSManager {
                     const id = btn.dataset.id;
                     const index = btn.dataset.index;
                     this.deleteSMS(id, index);
-                });
-            });
-            
-            document.querySelectorAll('.btn-mark-read').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const id = btn.dataset.id;
-                    this.markAsRead(id);
                 });
             });
         } else {
@@ -516,42 +535,6 @@ class SMSManager {
             console.error('Erreur restauration SMS:', error);
         }
     }
-
-    async markAsRead(smsId) {
-        try {
-            const response = await fetch(`/api/sms/mark-read/${smsId}`, { method: 'POST' });
-            if (response.ok) {
-                this.loadSMS();
-            } else {
-                const err = await response.text();
-                this.showToast('❌ Erreur marquer lu: ' + err, 'error');
-            }
-        } catch (error) {
-            console.error('Erreur marquer SMS lu:', error);
-        }
-    }
-
-    async markAllRead() {
-        const moduleSelect = document.getElementById('sms-module-filter');
-        const moduleId = moduleSelect?.value;
-        if (!moduleId || moduleId === 'all') {
-            alert('Sélectionnez un module pour marquer tous les SMS lus.');
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/modules/${moduleId}/sms/mark-all-read`, { method: 'POST' });
-            if (response.ok) {
-                this.showToast('✅ Tous les SMS du module sont maintenant marqués comme lus', 'success');
-                this.loadSMS();
-            } else {
-                const err = await response.text();
-                this.showToast('❌ Erreur marquer tous lus: ' + err, 'error');
-            }
-        } catch (error) {
-            console.error('Erreur marquer tous les SMS lus:', error);
-        }
-    }
     
     async deletePermanent(smsId) {
         if (!confirm('⚠️ Supprimer définitivement ce SMS ? Cette action est irréversible.')) return;
@@ -569,6 +552,57 @@ class SMSManager {
         }
     }
     
+    // MICRO-BLOC A3 — Marque un SMS individuel comme lu
+    async markRead(smsId, moduleId) {
+        try {
+            const response = await fetch(`/api/sms/mark-read/${smsId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ module_id: moduleId })
+            });
+            if (response.ok) {
+                // Mettre à jour localement pour éviter un rechargement complet
+                const sms = this.smsData.inbox.find(s => s.id === smsId);
+                if (sms) sms.is_read = true;
+                this.updateCounts();
+                this.render();
+                this.showToast('✓ SMS marqué comme lu', 'success');
+            } else {
+                const err = await response.text();
+                this.showToast('❌ Erreur: ' + err, 'error');
+            }
+        } catch (error) {
+            console.error('Erreur markRead:', error);
+            this.showToast('❌ Erreur réseau', 'error');
+        }
+    }
+
+    // MICRO-BLOC A3 — Marque tous les SMS du module sélectionné comme lus
+    async markAllRead() {
+        const moduleSelect = document.getElementById('sms-module-filter') || document.getElementById('sms-module-select');
+        const moduleId = moduleSelect?.value;
+
+        if (!moduleId || moduleId === 'all') {
+            // Si plusieurs modules chargés, marquer chaque module distinct
+            const moduleIds = [...new Set(this.smsData.inbox.filter(s => s.direction === 'in' && !s.is_read && s.module_id).map(s => s.module_id))];
+            if (moduleIds.length === 0) return;
+            for (const mid of moduleIds) {
+                await fetch(`/api/modules/${mid}/sms/mark-all-read`, { method: 'POST' });
+            }
+        } else {
+            const response = await fetch(`/api/modules/${moduleId}/sms/mark-all-read`, { method: 'POST' });
+            if (!response.ok) {
+                this.showToast('❌ Erreur mark-all-read', 'error');
+                return;
+            }
+        }
+        // Mettre à jour localement
+        this.smsData.inbox.forEach(s => { if (s.direction === 'in') s.is_read = true; });
+        this.updateCounts();
+        this.render();
+        this.showToast('✓ Tous les SMS marqués comme lus', 'success');
+    }
+
     showToast(message, type = 'info') {
         // Use global toast if available, otherwise fallback to console
         if (window.app && window.app.showToast) {
@@ -586,6 +620,11 @@ class SMSManager {
         }
         this.updateCounts();
         this.render();
+    }
+
+    // MICRO-BLOC A3 — Appelé par app.js lors d'un event WS sms_unread_count
+    setUnreadBadge(count) {
+        this.updateUnreadBadge(count);
     }
     
     escapeHtml(text) {

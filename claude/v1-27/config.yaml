@@ -1,0 +1,56 @@
+server:
+  port: 8082
+  websocket_path: "/ws"
+  api_path: "/api"
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+
+serial:
+  # Ports listés ici sont essayés en premier ; l'auto-discovery scanne COM1-COM99 et /dev/ttyUSB*
+  ports: []
+  baud_rate: 9600
+  timeout_seconds: 30
+  reconnect_delay_seconds: 5
+  command_queue_size: 100
+
+mysql:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: ""
+  database: "sim800c_manager_deepseekv1"
+  max_open_conns: 25
+  max_idle_conns: 10
+  conn_max_lifetime_minutes: 60
+
+excel:
+  # Chemin relatif au répertoire de l'application (résolu au démarrage)
+  base_path: "./storage/excel"
+  filename_pattern: "Codes_USSD_CI*.xlsx"
+  reload_interval_minutes: 5
+
+ussd:
+  max_menu_depth: 10
+  session_timeout_seconds: 60
+  explore_delay_ms: 3000   # délai entre étapes lors de l'exploration automatique
+  nav_delay_ms: 500         # délai minimum entre étapes de navigation manuelle
+
+sms:
+  auto_trash_keyword: "Test"
+  max_sms_per_module: 500
+  check_interval_seconds: 10
+
+security:
+  # jwt_secret est remplacé par la variable d'environnement SIM800C_JWT_SECRET si définie
+  # Laissez cette valeur comme fallback de développement uniquement
+  jwt_secret: "SIM800c-Supervisor-Secret-Key-2026-CHANGE-IN-PROD"
+  jwt_expiration_hours: 24
+  enable_auth: true
+  bcrypt_cost: 12
+
+logging:
+  level: "info"
+  output_path: "storage/logs/app.log"
+
+monitoring:
+  check_interval_seconds: 30

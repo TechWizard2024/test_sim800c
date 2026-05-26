@@ -1576,15 +1576,15 @@ func getConfigHandler(cfg *config.Config, logger *logrus.Logger) http.HandlerFun
 				"database": cfg.MySQL.Database,
 			},
 			"ussd": map[string]interface{}{
-				"explore_delay_ms":            cfg.USSD.ExploreDelayMs,
-				"nav_delay_ms":               cfg.USSD.NavDelayMs,
-				"max_menu_depth":             cfg.USSD.MaxMenuDepth,
-				"session_timeout_seconds":    cfg.USSD.SessionTimeoutSeconds,
+				"explore_delay_ms":               cfg.USSD.ExploreDelayMs,
+				"nav_delay_ms":                   cfg.USSD.NavDelayMs,
+				"max_menu_depth":                 cfg.USSD.MaxMenuDepth,
+				"session_timeout_seconds":        cfg.USSD.SessionTimeoutSeconds,
 				"default_choice_timeout_seconds": cfg.USSD.DefaultChoiceTimeoutSeconds,
 			},
 			"sms": map[string]interface{}{
-				"auto_trash_keyword":    cfg.SMS.AutoTrashKeyword,
-				"max_sms_per_module":    cfg.SMS.MaxSMSPerModule,
+				"auto_trash_keyword":     cfg.SMS.AutoTrashKeyword,
+				"max_sms_per_module":     cfg.SMS.MaxSMSPerModule,
 				"check_interval_seconds": cfg.SMS.CheckIntervalSeconds,
 			},
 			"monitoring": map[string]interface{}{
@@ -1649,12 +1649,12 @@ func getAdvancedSettingsHandler(cfg *config.Config, dbConn *db.DB, logger *logru
 		settings, _ := dbConn.GetAllSettings()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"auto_trash_keyword":    cfg.SMS.AutoTrashKeyword,
-			"retry_on_error":        cfg.USSD.RetryOnError,
-			"max_retries":           cfg.USSD.MaxRetries,
-			"max_menu_depth":        cfg.USSD.MaxMenuDepth,
+			"auto_trash_keyword":     cfg.SMS.AutoTrashKeyword,
+			"retry_on_error":         cfg.USSD.RetryOnError,
+			"max_retries":            cfg.USSD.MaxRetries,
+			"max_menu_depth":         cfg.USSD.MaxMenuDepth,
 			"check_interval_seconds": cfg.SMS.CheckIntervalSeconds,
-			"persisted":             settings,
+			"persisted":              settings,
 		})
 	}
 }
@@ -1733,8 +1733,8 @@ func updateAdvancedSettingsHandler(cfg *config.Config, dbConn *db.DB, smsManager
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success":          true,
-			"changed":          changed,
+			"success":            true,
+			"changed":            changed,
 			"auto_trash_keyword": cfg.SMS.AutoTrashKeyword,
 			"retry_on_error":     cfg.USSD.RetryOnError,
 			"max_retries":        cfg.USSD.MaxRetries,

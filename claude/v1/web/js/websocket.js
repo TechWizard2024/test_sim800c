@@ -56,8 +56,12 @@ class WebSocketManager {
     getWebSocketUrl() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.hostname;
-        // Use same port as the page (avoids hardcoded mismatch)
-        const port = window.location.port || '8082';
+        const port = window.location.port;
+        // Si on passe par Apache (port 80 ou vide), utiliser le proxy Apache sans port
+        // Si acces direct au backend (port 8082), ajouter le port
+        if (!port || port === '80' || port === '443') {
+            return `${protocol}//${host}/api/ws`;
+        }
         return `${protocol}//${host}:${port}/api/ws`;
     }
     

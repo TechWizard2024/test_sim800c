@@ -45,8 +45,8 @@ if pgrep -x "sim800c-supervisor" > /dev/null 2>&1; then
     case "${CHOICE^^}" in
         O)
             echo "  Ouverture du navigateur..."
-            xdg-open "http://localhost:${SERVER_PORT}" 2>/dev/null || \
-                echo "  Accédez manuellement à : http://localhost:${SERVER_PORT}"
+            xdg-open "http://localhost" 2>/dev/null || \
+                echo "  Accédez manuellement à : http://localhost"
             exit 0
             ;;
         A)
@@ -210,7 +210,7 @@ fi
 echo
 echo -e "${CYAN}========================================"
 echo "  Application en cours de démarrage..."
-echo "  Frontend : http://localhost:${SERVER_PORT}"
+echo "  Frontend : http://localhost"
 echo "  Backend  : http://127.0.0.1:${SERVER_PORT}"
 echo "  WebSocket: ws://localhost:${SERVER_PORT}/ws"
 echo -e "========================================${NC}"
@@ -235,10 +235,10 @@ if kill -0 "$APP_PID" 2>/dev/null; then
     echo
     # Ouvrir le navigateur si disponible
     if command -v xdg-open > /dev/null 2>&1; then
-        xdg-open "http://localhost:${SERVER_PORT}" 2>/dev/null &
+        xdg-open "http://localhost" 2>/dev/null &
         echo "  Navigateur ouvert automatiquement"
     else
-        echo "  Accédez à : http://localhost:${SERVER_PORT}"
+        echo "  Accédez à : http://localhost"
     fi
 else
     echo -e "  ${RED}[ERREUR]${NC} L'application ne semble pas avoir démarré correctement"

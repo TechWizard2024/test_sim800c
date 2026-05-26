@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 title SIM800C Supervisor - Arret
 
 echo ========================================
@@ -7,11 +8,30 @@ echo ========================================
 echo.
 
 echo [1/2] Arret de l'application Go...
-taskkill /F /IM sim800c-supervisor.exe /T >NUL 2>&1
-if %errorlevel% equ 0 (
-    echo   [OK] Application arretee
+
+REM Essayer d'abord par PID si disponible
+set APP_PID=
+if exist ".pid" (
+    set /P APP_PID=<.pid
+    set APP_PID=!APP_PID: =!
+)
+
+if defined APP_PID (
+    echo   Arret du processus PID: !APP_PID!...
+    taskkill /F /PID !APP_PID! >NUL 2>&1
+    if !errorlevel! equ 0 (
+        echo   [OK] Processus !APP_PID! arrete
+    ) else (
+        echo   [INFO] PID !APP_PID! introuvable - tentative par nom...
+        taskkill /F /IM sim800c-supervisor.exe /T >NUL 2>&1
+    )
 ) else (
-    echo   [INFO] Application non trouvee (deja arretee ?)
+    taskkill /F /IM sim800c-supervisor.exe /T >NUL 2>&1
+    if !errorlevel! equ 0 (
+        echo   [OK] Application arretee
+    ) else (
+        echo   [INFO] Application non trouvee ^(deja arretee ?^)
+    )
 )
 
 echo.
@@ -23,4 +43,6 @@ echo.
 echo ========================================
 echo   Application arretee avec succes
 echo ========================================
+echo.
 pause
+endlocal

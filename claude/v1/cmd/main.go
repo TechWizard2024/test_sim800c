@@ -285,7 +285,12 @@ func main() {
 
 	// Configurer CORS
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:8082", "http://127.0.0.1:8082", "http://test-sim800c.lan:8082", "http://test-sim800c.lan"},
+		AllowedOrigins: []string{
+			fmt.Sprintf("http://localhost:%d", cfg.Server.Port),
+			fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port),
+			fmt.Sprintf("http://test-sim800c.lan:%d", cfg.Server.Port),
+			"http://test-sim800c.lan",
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,

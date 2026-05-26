@@ -12,6 +12,23 @@ echo.
 cd /d "%~dp0"
 
 REM -----------------------------------------------
+REM Lecture du port depuis .env
+REM -----------------------------------------------
+set SERVER_PORT=8082
+if exist ".env" (
+    for /F "usebackq tokens=1,* delims==" %%A in (".env") do (
+        set "_KEY=%%A"
+        set "_VAL=%%B"
+        set "_KEY=!_KEY: =!"
+        if /I "!_KEY!"=="SERVER_PORT" (
+            set "_VAL=!_VAL: =!"
+            if not "!_VAL!"=="" set SERVER_PORT=!_VAL!
+        )
+    )
+)
+echo   [INFO] Port serveur : %SERVER_PORT%
+
+REM -----------------------------------------------
 REM PRE-CHECK : Verifier si deja en cours d'execution
 REM -----------------------------------------------
 tasklist /FI "IMAGENAME eq sim800c-supervisor.exe" 2>NUL | find /I "sim800c-supervisor.exe" >NUL
@@ -21,7 +38,7 @@ if %errorlevel% equ 0 (
     choice /C ONA /M "  [O]uvrir navigateur  [N]Nouvel instance  [A]rreter"
     if !errorlevel! equ 1 (
         echo   Ouverture du navigateur...
-        start http://test-sim800c.lan:8082
+        start http://test-sim800c.lan:%SERVER_PORT%
         exit /b 0
     )
     if !errorlevel! equ 3 (
@@ -34,11 +51,11 @@ if %errorlevel% equ 0 (
 echo.
 
 REM -----------------------------------------------
-REM PRE-CHECK : Verifier si port 8082 libre
+REM PRE-CHECK : Verifier si port libre
 REM -----------------------------------------------
-netstat -ano 2>NUL | find ":8082" | find "LISTENING" >NUL
+netstat -ano 2>NUL | find ":%SERVER_PORT%" | find "LISTENING" >NUL
 if %errorlevel% equ 0 (
-    echo [AVERT] Le port 8082 est deja occupe par un autre processus.
+    echo [AVERT] Le port %SERVER_PORT% est deja occupe par un autre processus.
     echo   Verifiez qu'aucune autre instance ne tourne.
     echo   L'application pourrait ne pas demarrer correctement.
     echo.
@@ -185,9 +202,9 @@ if not exist "sim800c-supervisor.exe" (
 echo.
 echo ========================================
 echo   Application en cours de demarrage...
-echo   Frontend : http://test-sim800c.lan:8082
-echo   Backend  : http://localhost:8082
-echo   WebSocket: ws://localhost:8082/ws
+echo   Frontend : http://test-sim800c.lan:%SERVER_PORT%
+echo   Backend  : http://localhost:%SERVER_PORT%
+echo   WebSocket: ws://localhost:%SERVER_PORT%/ws
 echo ========================================
 echo.
 echo   Connexion par defaut : admin / admin123
@@ -220,10 +237,10 @@ timeout /t 5 /nobreak >NUL
 REM Verifier que l'application tourne
 tasklist /FI "IMAGENAME eq sim800c-supervisor.exe" 2>NUL | find /I "sim800c-supervisor.exe" >NUL
 if %errorlevel% equ 0 (
-    echo   [OK] Serveur en ecoute sur le port 8082
+    echo   [OK] Serveur en ecoute sur le port %SERVER_PORT%
     echo.
     echo   Ouverture du navigateur...
-    start http://test-sim800c.lan:8082
+    start http://test-sim800c.lan:%SERVER_PORT%
 ) else (
     echo   [ERREUR] L'application ne semble pas avoir demarre correctement
     echo   Verifiez les logs dans storage\logs\runtime.log

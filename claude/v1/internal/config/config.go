@@ -142,6 +142,11 @@ func Load(path string) (*Config, error) {
 		cfg.Excel.BasePath = "./storage/excel"
 	}
 
+	// Port serveur : SERVER_PORT remplace config.yaml
+	if v := os.Getenv("SERVER_PORT"); v != "" {
+		fmt.Sscanf(v, "%d", &cfg.Server.Port)
+	}
+
 	// ── Valeurs par défaut ───────────────────────────────────────────────────
 
 	if cfg.Server.Port == 0 {

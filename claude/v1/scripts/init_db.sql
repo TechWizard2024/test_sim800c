@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Hôte : 127.0.0.1
--- Généré le : mar. 26 mai 2026 à 21:07
+-- Généré le : mar. 26 mai 2026 à 22:13
 -- Version du serveur : 10.4.32-MariaDB
 -- Version de PHP : 8.2.12
 
@@ -20,6 +20,8 @@ SET time_zone = "+00:00";
 --
 -- Base de données : `sim800c_manager_deepseekv1`
 --
+CREATE DATABASE IF NOT EXISTS `sim800c_manager_deepseekv1` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `sim800c_manager_deepseekv1`;
 
 -- --------------------------------------------------------
 

@@ -67,7 +67,7 @@ class SettingsManager {
         container.innerHTML = `
             <div class="config-section">
                 <h4>Serveur</h4>
-                <p>Port: ${config.server?.port || 8082}</p>
+                <p>Port: ${config.server?.port || window.location.port || 8082}</p>
                 <p>WebSocket: ${config.server?.websocket_path || '/ws'}</p>
             </div>
             <div class="config-section">

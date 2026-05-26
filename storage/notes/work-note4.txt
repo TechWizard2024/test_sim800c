@@ -852,3 +852,7 @@ Sur la base des informations ci-dessous :
 5- générer et telecharger la version mise à jour du fichier Checkpoint-General-v1-detailed-x.md
 6- générer et telecharger une version complète du projet avec les dernières mises à jour v1-x.zip
 
+--------------------------------------------------------------------
+
+
+

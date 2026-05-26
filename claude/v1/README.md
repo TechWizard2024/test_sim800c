@@ -1,9 +1,9 @@
 # SIM800C Supervisor
 
-Application web de supervision et de contrôle de modules **SIM800C USB** connectés à un PC Windows.
+Application web de supervision et de contrôle de modules **SIM800C USB** connectés à un PC Windows ou Linux/Ubuntu.
 
 **Stack :** Frontend HTML/CSS/JS · Backend Go · Base de données MySQL  
-**Version :** v1-27 · **Accès :** `http://test-sim800c.lan:8082`
+**Version :** v1-31 · **Accès :** `http://localhost:<SERVER_PORT>` (port lu depuis `.env`)
 
 ---
 
@@ -23,6 +23,8 @@ Application web de supervision et de contrôle de modules **SIM800C USB** connec
 
 ## 1. Prérequis
 
+### Windows
+
 | Composant | Version minimale | Remarque |
 |-----------|-----------------|----------|
 | **Go** | 1.21+ | [golang.org/dl](https://golang.org/dl) |
@@ -33,6 +35,18 @@ Application web de supervision et de contrôle de modules **SIM800C USB** connec
 
 > **Important :** Chaque module SIM800C doit apparaître dans le Gestionnaire de périphériques avec le nom `USB-SERIAL CH340`.  
 > Si ce n'est pas le cas, installez ou réinstallez le pilote CH340.
+
+### Linux / Ubuntu
+
+| Composant | Version minimale | Commande d'installation |
+|-----------|-----------------|------------------------|
+| **Go** | 1.21+ | `sudo apt-get install golang-go` |
+| **MySQL / MariaDB** | 8.0+ / 10.5+ | `sudo apt-get install mysql-server` |
+| **Groupe dialout** | — | `sudo usermod -aG dialout $USER` |
+| **Ubuntu** | 20.04+ | Recommandé 22.04 LTS |
+
+> **Ports USB :** Sur Linux, les modules SIM800C apparaissent comme `/dev/ttyUSB0`, `/dev/ttyUSB1`, etc.  
+> L'utilisateur doit appartenir au groupe `dialout` pour y accéder.
 
 ---
 
@@ -85,18 +99,49 @@ L'application s'ouvre automatiquement sur `http://test-sim800c.lan:8082`.
 
 ## 3. Démarrage et arrêt
 
+### Windows
+
 | Script | Action |
 |--------|--------|
 | `start_app.bat` | Lance MySQL (si XAMPP), compile si nécessaire, applique les migrations, démarre le serveur et ouvre le navigateur |
 | `stop_app.bat` | Arrête proprement le serveur Go |
 
 `start_app.bat` effectue automatiquement :
-- Vérification si le port 8082 est déjà occupé
+- Lecture du port depuis `.env` (`SERVER_PORT`)
+- Vérification si le port est déjà occupé
 - Détection d'une instance déjà en cours (menu O/N/Arrêter)
 - Création des dossiers `storage/`, `storage/logs/`, `storage/excel/` si absents
 - Copie de `Codes_USSD_CI.xlsx` vers `storage/excel/` si absent
 - Application des migrations `migrate_v1-13.sql` et `migrate_v1-25.sql`
 - Écriture du PID dans `.pid` pour arrêt propre
+
+### Linux / Ubuntu
+
+```bash
+# Rendre les scripts exécutables (première fois)
+chmod +x start_app.sh stop_app.sh scripts/deploy.sh scripts/install_service.sh scripts/test_setup.sh
+
+# Démarrer
+./start_app.sh
+
+# Arrêter
+./stop_app.sh
+
+# Déploiement complet (build + DB + démarrage)
+./scripts/deploy.sh
+
+# Installation comme service systemd (démarrage automatique au boot)
+sudo ./scripts/install_service.sh
+```
+
+`start_app.sh` effectue automatiquement :
+- Lecture du port depuis `.env` (`SERVER_PORT`)
+- Vérification si le port est déjà occupé (`ss` / `netstat`)
+- Détection des modules USB (`/dev/ttyUSB*`, `/dev/ttyACM*`)
+- Vérification du groupe `dialout` pour l'accès USB
+- Démarrage MySQL/MariaDB si nécessaire
+- Compilation si le binaire est absent ou les sources plus récentes
+- Ouverture du navigateur via `xdg-open`
 
 ---
 
@@ -179,15 +224,16 @@ Lecture / envoi / suppression de SMS, corbeille automatique (SMS sans le mot "Te
 ## 7. Structure du projet
 
 ```
-v1-27/
+v1-31/
 ├── cmd/main.go                  ← Serveur HTTP, routes API, handlers
 ├── config.yaml                  ← Configuration globale
 ├── .env                         ← Variables d'environnement (ne pas versionner)
-├── start_app.bat / stop_app.bat ← Scripts démarrage / arrêt
+├── start_app.bat / stop_app.bat ← Scripts démarrage / arrêt (Windows)
+├── start_app.sh  / stop_app.sh  ← Scripts démarrage / arrêt (Linux/Ubuntu)
 ├── internal/
 │   ├── api/handlers/            ← Handlers HTTP (module, sms, ussd, websocket)
 │   ├── auth/auth.go             ← JWT, authentification
-│   ├── config/config.go         ← Chargement config + variables env
+│   ├── config/config.go         ← Chargement config + variables env (SERVER_PORT)
 │   ├── db/db.go                 ← Accès MySQL, toutes les fonctions DB
 │   ├── excel/                   ← Lecture/écriture Codes_USSD_CI.xlsx
 │   ├── serial/                  ← Communication série SIM800C
@@ -197,7 +243,13 @@ v1-27/
 ├── scripts/
 │   ├── init_db.sql              ← Initialisation complète de la base
 │   ├── migrate_v1-13.sql        ← Migration is_read (idempotente)
-│   └── migrate_v1-25.sql        ← Migration signal_log
+│   ├── migrate_v1-25.sql        ← Migration signal_log
+│   ├── deploy.ps1               ← Déploiement PowerShell (Windows)
+│   ├── deploy.sh                ← Déploiement bash (Linux/Ubuntu)
+│   ├── install_service.bat      ← Installation service Windows
+│   ├── install_service.sh       ← Installation service systemd (Linux/Ubuntu)
+│   ├── test_setup.ps1           ← Setup tests PowerShell (Windows)
+│   └── test_setup.sh            ← Setup tests bash (Linux/Ubuntu)
 ├── storage/
 │   ├── excel/                   ← Fichiers Codes_USSD_CI*.xlsx
 │   └── logs/                    ← Logs applicatifs
@@ -210,6 +262,8 @@ v1-27/
 ---
 
 ## 8. Tests
+
+### Windows
 
 ```bat
 REM Lancer tous les tests Go
@@ -226,10 +280,27 @@ REM Tests avec couverture
 go test ./internal/... -cover
 ```
 
-> **Base de test DB :** Créez une base `sim800c_test` avant de lancer les tests DB :
-> ```bat
-> C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE IF NOT EXISTS sim800c_test CHARACTER SET utf8mb4;"
-> ```
+### Linux / Ubuntu
+
+```bash
+# Configuration automatique de l'environnement de test
+./scripts/test_setup.sh
+
+# Ou manuellement :
+# Créer la base de test
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS sim800c_test CHARACTER SET utf8mb4;"
+
+# Tous les tests
+TEST_DB_DSN="root:@tcp(127.0.0.1:3306)/sim800c_test?parseTime=true" go test ./internal/...
+
+# Tests validateur USSD (sans DB)
+go test ./internal/ussd/ -v
+
+# Tests avec couverture
+TEST_DB_DSN="root:@tcp(127.0.0.1:3306)/sim800c_test?parseTime=true" go test ./internal/... -cover
+```
+
+> **Base de test DB :** Créez une base `sim800c_test` avant de lancer les tests DB.  
 > Les tests créent et nettoient leurs propres données. Si la base est inaccessible, les tests DB sont **skippés** automatiquement (pas d'échec bloquant).
 
 ---
@@ -238,10 +309,11 @@ go test ./internal/... -cover
 
 | Symptôme | Cause probable | Solution |
 |----------|---------------|----------|
-| Module non détecté | Pilote CH340 absent | Installer [CH341SER.exe](http://www.wch-ic.com/downloads/CH341SER_EXE.html) |
+| Module non détecté (Windows) | Pilote CH340 absent | Installer [CH341SER.exe](http://www.wch-ic.com/downloads/CH341SER_EXE.html) |
+| Module non détecté (Linux) | Permissions /dev/ttyUSB* | `sudo usermod -aG dialout $USER` puis reconnexion |
 | `ERROR` sur codes USSD | SIM verrouillée PIN | L'app tente le PIN par défaut automatiquement ; vérifier l'opérateur détecté |
-| Port 8082 occupé | Autre processus | `netstat -ano \| find ":8082"` puis terminer le PID |
-| Base de données inaccessible | MySQL non démarré | Lancer XAMPP → démarrer MySQL, ou `start_app.bat` (démarre MySQL automatiquement) |
+| Port occupé | Autre processus | Windows: `netstat -ano \| find ":<PORT>"` · Linux: `ss -tlnp \| grep <PORT>` |
+| Base de données inaccessible | MySQL non démarré | Windows: XAMPP → démarrer MySQL · Linux: `sudo systemctl start mysql` |
 | `+CUSD: 2` sans réponse | Session USSD expirée | Réduire `explore_delay_ms` dans `config.yaml` ou répondre en < 5 secondes |
 | SMS non reçus | Module non enregistré réseau | Vérifier `AT+CREG?` → doit retourner `+CREG: 0,1` |
 

@@ -53,24 +53,45 @@ func NewAuthManager(dbConn *db.DB, cfg *config.Config, logger *logrus.Logger) *A
 
 func (a *AuthManager) CreateDefaultAdmin() {
 	exists, _ := a.db.UserExists("admin")
-	if exists {
+	if !exists {
+		// Créer l'admin s'il n'existe pas
+		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("admin123"), a.cfg.Security.BcryptCost)
+		user := &db.User{
+			Username:     "admin",
+			PasswordHash: string(hashedPassword),
+			Role:         "admin",
+			CreatedAt:    time.Now(),
+		}
+		if err := a.db.CreateUser(user); err != nil {
+			a.logger.Warnf("Erreur création admin: %v", err)
+			return
+		}
+		a.logger.Info("Utilisateur admin créé (mot de passe: admin123)")
 		return
 	}
 
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("admin123"), a.cfg.Security.BcryptCost)
-
-	user := &db.User{
-		Username:     "admin",
-		PasswordHash: string(hashedPassword),
-		Role:         "admin",
-		CreatedAt:    time.Now(),
-	}
-
-	if err := a.db.CreateUser(user); err != nil {
-		a.logger.Warnf("Erreur création admin: %v", err)
+	// L'admin existe — vérifier que le hash est valide pour admin123
+	// Si le hash en DB est un placeholder invalide (ex: issu de init_db.sql),
+	// le réinitialiser avec un hash correct.
+	user, err := a.db.GetUserByUsername("admin")
+	if err != nil {
+		a.logger.Warnf("CreateDefaultAdmin: impossible de récupérer admin: %v", err)
 		return
 	}
-	a.logger.Info("Utilisateur admin créé (mot de passe: admin123)")
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("admin123")); err != nil {
+		// Hash invalide ou placeholder — régénérer
+		a.logger.Warn("CreateDefaultAdmin: hash admin invalide détecté — réinitialisation du mot de passe à 'admin123'")
+		newHash, hashErr := bcrypt.GenerateFromPassword([]byte("admin123"), a.cfg.Security.BcryptCost)
+		if hashErr != nil {
+			a.logger.Errorf("CreateDefaultAdmin: erreur génération hash: %v", hashErr)
+			return
+		}
+		if updateErr := a.db.UpdateUserPassword(user.ID, string(newHash)); updateErr != nil {
+			a.logger.Errorf("CreateDefaultAdmin: erreur mise à jour hash: %v", updateErr)
+			return
+		}
+		a.logger.Info("CreateDefaultAdmin: mot de passe admin réinitialisé à 'admin123'")
+	}
 }
 
 func (a *AuthManager) LoginHandler(w http.ResponseWriter, r *http.Request) {

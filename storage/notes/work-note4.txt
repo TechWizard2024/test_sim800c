@@ -775,15 +775,14 @@ Sur la base des informations ci-dessous :
 
 Sur la base des informations ci-dessous : 
 	- la description du projet project_desc.txt (en piece jointe)
-	- projet contenu dans v1-30.zip (en piece jointe )
-	- Checkpoint-General-v1-detailed-8.md
+	- projet contenu dans v1-32.zip (en piece jointe )
+	- Checkpoint-General-v1-detailed-10.md (en piece jointe )
 	
 J'ai un pc win10 avec xampp 8.2.12
-Le serveur apache de xampp s'execute sur le port 8082
 
 -------------- DEBUT Extrait de C:\xampp\apache\conf\extra\httpd-vhosts.conf ----------------------
 
-<VirtualHost *:8082>
+<VirtualHost *:80>
     ServerName test-sim800c.lan
     DocumentRoot "C:/xampp/htdocs/aa_Toolbox/test_sim800c/claude/v1/web"
     <Directory "C:/xampp/htdocs/aa_Toolbox/test_sim800c/claude/v1/web">
@@ -792,13 +791,14 @@ Le serveur apache de xampp s'execute sur le port 8082
         Require all granted
     </Directory>
     
-    # Proxy vers l'API Go
+    # IMPORTANT: Le proxy WebSocket doit etre AVANT le proxy /api
+    # Proxy WebSocket vers l'API Go (chemin complet /api/ws)
+    ProxyPass /api/ws ws://localhost:8082/api/ws
+    ProxyPassReverse /api/ws ws://localhost:8082/api/ws
+    
+    # Proxy REST vers l'API Go
     ProxyPass /api http://localhost:8082/api
     ProxyPassReverse /api http://localhost:8082/api
-    
-    # Proxy WebSocket
-    ProxyPass /ws ws://localhost:8082/ws
-    ProxyPassReverse /ws ws://localhost:8082/ws
     
     ErrorLog "logs/sim800c_error.log"
     CustomLog "logs/sim800c_access.log" common
@@ -807,24 +807,142 @@ Le serveur apache de xampp s'execute sur le port 8082
 -------------- FIN Extrait de C:\xampp\apache\conf\extra\httpd-vhosts.conf ----------------------
 
 
+Lorsque j'execute start_app.bat , J'ai le resultat ci-dessous
 
-Lorsque j'execute start_app.bat une fenetre s'ouvre, affiche le contenu ci-dessous et se referme automatique
+---------------- DEBUT RESULTAT start_app.bat ------------------------------
 
---------------- DEBUT CONTENU ------------------------
+PowerShell 7.5.4
 
+   A new PowerShell stable release is available: v7.6.2
+   Upgrade now, or check out the release page at:
+     https://aka.ms/PowerShell-Release?tag=v7.6.2
+
+PS C:\WINDOWS\System32> CD C:\xampp\htdocs\aa_Toolbox\test_sim800c\claude\v1
+PS C:\xampp\htdocs\aa_Toolbox\test_sim800c\claude\v1> .\start_app.bat
 ========================================
   SIM800C Supervisor v1
   Demarrage de l'application
 ========================================
 
+  [INFO] Port serveur : 8082
+
+
 [1/4] Verification de MySQL (XAMPP)...
 
---------------- FIN CONTENU ------------------------
+  [OK] MySQL est en cours d'execution
 
+[2/4] Verification de la base de donnees...
+
+  [OK] Base de donnees sim800c_manager_deepseekv1 accessible
+
+[3/4] Detection des modules SIM800C USB...
+
+  L'application effectuera un scan automatique de COM1 a COM99
+  Les modules SIM800C (USB-SERIAL CH340) seront detectes automatiquement
+
+  [INFO] Aucun port COM detecte dans COM1-COM30
+  [INFO] L'application continuera a scanner en arriere-plan
+
+[4/4] Demarrage de l'application...
+
+  [OK] Executable sim800c-supervisor.exe trouve
+
+========================================
+  Application en cours de demarrage...
+  Frontend : http://test-sim800c.lan
+  Backend  : http://localhost:8082
+  WebSocket: ws://localhost:8082/ws
+========================================
+
+  Connexion par defaut : admin / admin123
+  Appuyez sur Ctrl+C dans cette fenetre pour arreter les logs
+  (l'application continue en arriere-plan)
+
+  Lancement du processus Go en arriere-plan...
+  [OK] Application demarree (PID: 10708)
+  Attente du serveur (15 secondes - scan des ports COM en cours)...
+  [OK] Serveur en ecoute sur le port 8082
+
+  Ouverture du navigateur...
+
+========================================
+  SIM800C Supervisor est actif
+  Frontend : http://test-sim800c.lan
+  Logs     : storage\logs\runtime.log
+========================================
+
+  --- Logs en temps reel (fermez cette fenetre pour arreter l'affichage) ---
+  --- L'application continue en arriere-plan meme si vous fermez cette fenetre ---
+
+---------------- FIN RESULTAT start_app.bat ------------------------------
+
+---------------- DEBUT RESULTAT diagnose_apache.bat ------------------------------
+
+PowerShell 7.5.4
+
+   A new PowerShell stable release is available: v7.6.2
+   Upgrade now, or check out the release page at:
+     https://aka.ms/PowerShell-Release?tag=v7.6.2
+
+PS C:\WINDOWS\System32> CD C:\xampp\htdocs\aa_Toolbox\test_sim800c\claude\v1
+PS C:\xampp\htdocs\aa_Toolbox\test_sim800c\claude\v1> .\diagnose_apache.bat
+============================================
+ SIM800C - Diagnostic Complet
+============================================
+
+[1] Verification des modules proxy dans httpd.conf...
+  [OK] mod_proxy.so active
+  [OK] mod_proxy_http.so active
+  [OK] mod_proxy_wstunnel.so active
+
+[2] Verification du vhosts conf...
+  [OK] ProxyPass /api/ws present
+  [OK] ProxyPass /api present
+
+[3] Processus sim800c-supervisor.exe en cours ?
+  [OK] sim800c-supervisor.exe est en cours d'execution
+
+sim800c-supervisor.exe       10708 RDP-Tcp#0                  2    29 360 Ko
+
+[4] Port 8082 en ecoute ?
+  [OK] Port 8082 en ecoute
+  TCP    0.0.0.0:8082           0.0.0.0:0              LISTENING       10708
+  TCP    [::]:8082              [::]:0                 LISTENING       10708
+
+[5] Verification backend directement sur port 8082...
+  [ERREUR] Backend inaccessible sur 8082: Le serveur distant a retourné une erreur : (404) Introuvable.
+
+[6] Port 80 Apache en ecoute ?
+  [OK] Port 80 en ecoute
+
+[7] Test proxy Apache...
+  [ERREUR] Proxy Apache echoue: Le serveur distant a retourné une erreur : (404) Introuvable.
+
+[8] Logs Apache recents...
+  Dernieres lignes de sim800c_error.log:
+   [Tue May 26 23:37:57.701209 2026] [proxy:error] [pid 10160:tid 1912] [client 127.0.0.1:52981] AH00898: Error reading from remote server returned by /api/modules, referer: http://test-sim800c.lan/
+   [Tue May 26 23:49:27.625063 2026] [proxy_http:error] [pid 10160:tid 1880] (OS 10053)Une connexion établie a été abandonnée par un logiciel de votre ordinateur hôte.  : [client 127.0.0.1:61068] AH01102: error reading status line from remote server localhost:8082, referer: http://test-sim800c.lan/
+   [Tue May 26 23:49:27.625758 2026] [proxy:error] [pid 10160:tid 1880] [client 127.0.0.1:61068] AH00898: Error reading from remote server returned by /api/modules, referer: http://test-sim800c.lan/
+   [Wed May 27 00:00:28.365652 2026] [proxy_http:error] [pid 10160:tid 1880] (OS 10054)Une connexion existante a dû être fermée par l’hôte distant.  : [client 127.0.0.1:52563] AH01102: error reading status line from remote server localhost:8082, referer: http://test-sim800c.lan/
+   [Wed May 27 00:00:28.365652 2026] [proxy:error] [pid 10160:tid 1880] [client 127.0.0.1:52563] AH00898: Error reading from remote server returned by /api/ussd/history, referer: http://test-sim800c.lan/
+
+[9] Logs runtime Go recents...
+  Dernieres lignes de runtime.log:
+
+============================================
+ FIN DU DIAGNOSTIC
+============================================
+Appuyez sur une touche pour continuer...
+
+
+---------------- FIN RESULTAT diagnose_apache.bat ------------------------------
+
+
+Lorsque j'ouvre le frontend manuellement http://test-sim800c.lan/ , J'ai le resultat dans Frontend-Output-2.png
 
 1- Analyser la description du projet project_desc.txt 
-2- Analyser le projet v1-30.zip
-3- Analyser Checkpoint-General-v1-detailed-8.md
+2- Analyser le projet v1-32.zip
+3- Analyser Checkpoint-General-v1-detailed-10.md
 
 4- Diagnostiquer et corriger le probleme
 
@@ -833,6 +951,11 @@ Lorsque j'execute start_app.bat une fenetre s'ouvre, affiche le contenu ci-desso
 7- générer et telecharger une version complète du projet avec les dernières mises à jour v1-x.zip
 
 ----------------------------------------
+
+
+Après avoir executer les mise à jour précédentes, je lance le programme , j'utilise login admin / admin123 mais j'ai l'erreur suivante (voir pièce jointe):
+
+Login échoué (401): Identifiants invalides
 
 -----------------------------------------------------------
 Sur la base des informations ci-dessous : 
@@ -856,3 +979,8 @@ Sur la base des informations ci-dessous :
 
 
 
+1- Implementer la fonctionnalité additionelle recommandée dans Checkpoint-General-v1-detailed-9.md (section : 5. PROCHAINES ÉTAPES)
+	- Tests d'intégration HTTP (httptest)
+	
+2- générer et telecharger la version mise à jour du fichier Checkpoint-General-v1-detailed-x.md
+3- générer et telecharger une version complète du projet avec les dernières mises à jour v1-x.zip

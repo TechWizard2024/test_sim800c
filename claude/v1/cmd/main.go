@@ -174,16 +174,7 @@ func main() {
 	router.Use(loggingMiddleware(logger))
 	router.Use(recoveryMiddleware(logger))
 
-	// Servir les fichiers statiques (sans embed)
-	webDir := "./web"
-	if _, err := os.Stat(webDir); err == nil {
-		router.PathPrefix("/").Handler(http.FileServer(http.Dir(webDir)))
-		logger.Info("Frontend servi depuis le dossier web/")
-	} else {
-		logger.Warn("Dossier web/ non trouvé")
-	}
-
-	// Routes API
+	// Routes API (DOIT être enregistré AVANT le handler de fichiers statiques)
 	apiRouter := router.PathPrefix("/api").Subrouter()
 
 	// Routes publiques
@@ -282,6 +273,16 @@ func main() {
 	// WebSocket (auth JWT via Authorization header)
 	wsHandler := handlers.NewWebSocketHandler(hub, logger, authManager)
 	apiRouter.HandleFunc("/ws", wsHandler.HandleWebSocket).Methods("GET")
+
+	// Servir les fichiers statiques (DOIT être enregistré APRÈS toutes les routes /api)
+	// PathPrefix("/") intercepterait sinon les routes API avant qu'elles soient matchées
+	webDir := "./web"
+	if _, err := os.Stat(webDir); err == nil {
+		router.PathPrefix("/").Handler(http.FileServer(http.Dir(webDir)))
+		logger.Info("Frontend servi depuis le dossier web/")
+	} else {
+		logger.Warn("Dossier web/ non trouvé")
+	}
 
 	// Configurer CORS
 	corsHandler := cors.New(cors.Options{

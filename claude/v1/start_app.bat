@@ -202,9 +202,19 @@ REM -----------------------------------------------
 echo [4/4] Demarrage de l'application...
 echo.
 
-REM Construire si l'executable n'existe pas
-if not exist "sim800c-supervisor.exe" (
-    echo   Compilation en cours ^(premiere fois^)...
+REM Construire si l'executable n'existe pas OU si les sources sont plus recentes
+set NEED_BUILD=0
+if not exist "sim800c-supervisor.exe" set NEED_BUILD=1
+if exist "cmd\main.go" (
+    REM Verifier si les sources sont plus recentes que l'exe
+    for /f %%i in ('powershell -Command "if ((Get-Item cmd\main.go).LastWriteTime -gt (Get-Item sim800c-supervisor.exe).LastWriteTime) { echo 1 } else { echo 0 }" 2^>NUL') do set SRC_NEWER=%%i
+    if "!SRC_NEWER!"=="1" (
+        echo   [INFO] Sources modifiees - recompilation necessaire
+        set NEED_BUILD=1
+    )
+)
+if !NEED_BUILD! equ 1 (
+    echo   Compilation en cours...
     where go >NUL 2>&1
     if !errorlevel! equ 0 (
         go build -o sim800c-supervisor.exe ./cmd/

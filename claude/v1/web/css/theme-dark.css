@@ -1,3 +1,4 @@
+/* ─── Thème sombre — variables CSS ─────────────────────────────────────── */
 :root {
     --bg-primary: #1a1a2e;
     --text-primary: #f0f0f0;
@@ -10,8 +11,21 @@
     --info-bg: #1a2a4a;
     --result-bg: #0f1a2e;
     --input-bg: #0f1a2e;
+    --text: #f0f0f0;
+    --subtext: #b0b0c0;
+    --border: #0f3460;
+    --heading: #e0e0f0;
+    --success: #4caf50;
+    --warning: #ffc107;
+    --danger: #f44336;
+    --info: #29b6f6;
+    --surface: #16213e;
+    --text-muted: #8080a0;
+    --unread-bg: #1a2a4a;
+    --trash-bg: #2a1a1a;
+    --primary: #e94560;
+    --bg: #16213e;
 }
-
 body {
     background-color: var(--bg-primary);
     color: var(--text-primary);

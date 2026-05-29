@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SIM800C Supervisor</title>
-    <link rel="stylesheet" id="theme-light" href="/css/main.css">
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" id="theme-light" href="/css/theme-light.css">
     <link rel="stylesheet" id="theme-dark" href="/css/theme-dark.css" disabled>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -171,7 +172,7 @@
         </div>
 
         <!-- Dashboard Tab -->
-        <div id="dashboard-tab" class="tab-content">
+        <div id="dashboard-tab" class="tab-content active">
             <!-- Statut système -->
             <div class="module-card" id="system-status-panel" style="margin-bottom:16px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -201,7 +202,7 @@
                 <input type="text" id="ussd-input-data" placeholder="Données d'entrée (optionnel)" style="width: 100%; padding: 10px; margin: 10px 0; background: var(--input-bg,white); color: var(--text,#333); border: 1px solid var(--border,#ddd); border-radius:5px;">
                 <button class="btn btn-primary" onclick="executeUSSDManual()">▶ Exécuter</button>
                 <!-- Résultat USSD -->
-                <pre id="ussd-output" class="result" style="margin-top:10px; white-space: pre-wrap; word-break: break-word;"></pre>
+                <div id="ussd-output" style="margin-top:10px; padding:10px; background:var(--result-bg,#f0f4ff); border-radius:8px; white-space:pre-wrap; word-break:break-word; font-size:0.85rem; min-height:40px; color:var(--text,#333); display:none;"></div>
                 <!-- Boutons de navigation menu USSD (remplis dynamiquement) -->
                 <div id="ussd-menu-choices" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;"></div>
             </div>
@@ -211,8 +212,8 @@
                     <button class="btn btn-success" onclick="autoStatusDiscovery()" title="Exécute automatiquement tous les codes USSD Consulter/Interne pour chaque module">🚀 SIM Status Auto-Discovery</button>
                     <button class="btn btn-info" onclick="autoMenuDiscovery()" title="Explore automatiquement tous les menus Services_N1 pour chaque module">🌲 USSD Menu Auto-Discovery</button>
                 </div>
-                <div id="auto-discovery-result" class="result" style="margin-top:10px;"></div>
-                <div id="auto-menu-result" class="result" style="margin-top:10px;"></div>
+                <div id="auto-discovery-result" style="margin-top:10px; padding:10px; background:var(--result-bg,#f0f4ff); border-radius:8px; display:none;"></div>
+                <div id="auto-menu-result" style="margin-top:10px; padding:10px; background:var(--result-bg,#f0f4ff); border-radius:8px; display:none;"></div>
             </div>
             <!-- Manual Status Discovery per module (Fonction 2-1) -->
             <div id="manual-status-section" style="margin-top: 20px;">
@@ -228,6 +229,13 @@
                 <input type="tel" id="sms-number" placeholder="Numéro destinataire (10 chiffres)" style="width: 100%; padding: 10px; margin: 10px 0; background: var(--input-bg,white); color: var(--text,#333); border: 1px solid var(--border,#ddd); border-radius:5px;">
                 <textarea id="sms-message" rows="3" placeholder="Message" style="width: 100%; padding: 10px; margin: 10px 0; background: var(--input-bg,white); color: var(--text,#333); border: 1px solid var(--border,#ddd); border-radius:5px;"></textarea>
                 <button class="btn btn-primary" onclick="sendSMS()">📨 Envoyer</button>
+            </div>
+            <!-- SMS Envoyés -->
+            <div class="module-card" style="margin-top: 20px;">
+                <h3 style="margin:0 0 10px 0;">📤 SMS envoyés</h3>
+                <div id="sms-sent-list" style="max-height:300px;overflow-y:auto;">
+                    <div class="loading">Chargement...</div>
+                </div>
             </div>
             <div class="module-card" style="margin-top: 20px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
@@ -253,7 +261,7 @@
                 <select id="explorer-module" style="width: 100%; padding: 10px; margin: 10px 0; background: var(--input-bg,white); color: var(--text,#333); border: 1px solid var(--border,#ddd); border-radius:5px;"></select>
                 <input type="text" id="explorer-code" placeholder="Code USSD (ex: #111#)" style="width: 100%; padding: 10px; margin: 10px 0; background: var(--input-bg,white); color: var(--text,#333); border: 1px solid var(--border,#ddd); border-radius:5px;">
                 <button class="btn btn-primary" onclick="exploreMenu()">🔍 Explorer</button>
-                <div id="explorer-result" class="result"></div>
+                <div id="explorer-result" style="margin-top:10px; padding:10px; background:var(--result-bg,#f0f4ff); border-radius:8px; display:none; white-space:pre-wrap; font-size:0.85rem;"></div>
             </div>
             <!-- Fonction 3-1: per-module Services_N1 buttons -->
             <div id="menu-explorer-section" style="margin-top: 20px;"></div>
@@ -563,7 +571,8 @@
 
         // ─── WebSocket ───────────────────────────────────────────────────────
         function connectWebSocket() {
-            const wsUrl = `ws://${window.location.host}/ws`;
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/api/ws`;
             wsConnection = new WebSocket(wsUrl);
 
             wsConnection.onopen = () => {
@@ -636,7 +645,10 @@
             const log = document.getElementById('rt-log');
             const div = document.createElement('div');
             div.className = 'rt-event';
-            div.textContent = text;
+            // Add timestamp if not already present
+            const ts = new Date().toLocaleTimeString('fr-FR');
+            const hasTs = /\[\d{2}:\d{2}:\d{2}\]/.test(text);
+            div.textContent = hasTs ? text : `[${ts}] ${text}`;
             log.insertBefore(div, log.firstChild);
             // Keep max 50 entries
             while (log.children.length > 50) log.removeChild(log.lastChild);
@@ -863,15 +875,19 @@
                 resultDiv.style.display = 'block';
                 resultDiv.innerHTML = '<pre>⏳ Exécution de ' + escapeHtml(code) + '...</pre>';
             }
-
-            const response = await apiCall(`/api/modules/${moduleId}/ussd/execute`, {
-                method: 'POST',
-                body: JSON.stringify({ ussd_code: code, input_data: inputData })
-            });
-            const result = await response.json();
-
-            if (resultDiv) resultDiv.innerHTML = '<pre>' + escapeHtml(result.result || result.error || 'Aucun résultat') + '</pre>';
-            showToast(result.success ? 'Succès' : 'Erreur', result.success ? 'success' : 'error');
+            try {
+                const response = await apiCall(`/api/modules/${moduleId}/ussd/execute`, {
+                    method: 'POST',
+                    body: JSON.stringify({ ussd_code: code, input_data: inputData })
+                });
+                const result = await response.json();
+                const parsed = parseUSSDResult(result.result || result.error || 'Aucun résultat');
+                if (resultDiv) resultDiv.innerHTML = '<pre>' + escapeHtml(parsed) + '</pre>';
+                showToast(result.success ? 'Succès' : 'Erreur', result.success ? 'success' : 'error');
+            } catch(e) {
+                if (resultDiv) resultDiv.innerHTML = '<pre>Erreur: ' + escapeHtml(e.message) + '</pre>';
+                showToast('Erreur', 'error');
+            }
         }
 
         async function executeUSSDInSection(moduleId, code, resultDivId) {
@@ -885,7 +901,7 @@
                 body: JSON.stringify({ ussd_code: code, input_data: '' })
             });
             const result = await response.json();
-            if (resultDiv) resultDiv.innerHTML = '<pre>' + escapeHtml(result.result || result.error || 'Aucun résultat') + '</pre>';
+            if (resultDiv) resultDiv.innerHTML = '<pre>' + escapeHtml(parseUSSDResult(result.result || result.error || 'Aucun résultat')) + '</pre>';
             showToast(result.success ? 'Succès' : 'Erreur', result.success ? 'success' : 'error');
         }
 
@@ -906,7 +922,8 @@
             });
             const result = await response.json();
             if (outputPre) {
-                outputPre.textContent = result.result || result.error || JSON.stringify(result, null, 2);
+                outputPre.textContent = parseUSSDResult(result.result || result.error || JSON.stringify(result, null, 2));
+                outputPre.style.display = 'block';
             }
             // Render navigation buttons if result has menu options
             if (window.ussdManager && result.result) {
@@ -988,7 +1005,7 @@
             const number = document.getElementById('sms-number').value.trim();
             const message = document.getElementById('sms-message').value.trim();
             if (!number || !message) { alert('Complétez tous les champs'); return; }
-            if (!/^\d{10}$/.test(number)) { alert('Le numéro doit contenir exactement 10 chiffres (sans indicatif)'); return; }
+            if (!/^[+\d]{8,15}$/.test(number)) { alert('Numéro invalide (8-15 chiffres, indicatif international autorisé)'); return; }
 
             const response = await apiCall(`/api/modules/${moduleId}/sms/send`, {
                 method: 'POST',
@@ -1112,6 +1129,19 @@
         }
 
         // ─── Utilities ────────────────────────────────────────────────────────
+        // Parse AT +CUSD response to extract human-readable text
+        function parseUSSDResult(raw) {
+            if (!raw) return 'Aucun résultat';
+            // Extract text from +CUSD: N, "message" pattern
+            const cusdMatch = raw.match(/\+CUSD:\s*\d+,\s*"([^"]+)"/);
+            if (cusdMatch) return cusdMatch[1].replace(/\\n/g, '\n').trim();
+            // For *#06# IMEI: extract from +CGSN or plain number
+            const imeiMatch = raw.match(/\+CGSN[:\s]+(\d{15})/);
+            if (imeiMatch) return 'IMEI: ' + imeiMatch[1];
+            // Already clean text
+            if (!raw.includes('+CUSD') && !raw.includes('AT+CUSD')) return raw.trim();
+            return raw;
+        }
         function escapeHtml(text) {
             if (!text) return '';
             return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

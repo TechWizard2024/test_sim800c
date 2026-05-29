@@ -288,7 +288,7 @@ class SIM800CApp {
             const fetches = moduleIds.map(async (id) => {
                 try {
                     const resp = await fetch(`/api/modules/${id}/sms/unread-count`, {
-                        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('auth_token') || '') }
+                        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
                     });
                     if (!resp.ok) return 0;
                     const data = await resp.json();
@@ -567,7 +567,7 @@ class SIM800CApp {
     async loadSystemStatus() {
         try {
             const resp = await fetch('/api/system/status', {
-                headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('auth_token') || '') }
+                headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }
             });
             if (!resp.ok) return;
             const d = await resp.json();

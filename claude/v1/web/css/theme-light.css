@@ -1,0 +1,32 @@
+/* ─── Thème clair — variables CSS ─────────────────────────────────────── */
+:root {
+    --bg-primary: #f0f2f5;
+    --text-primary: #1a1a2e;
+    --text-secondary: #555577;
+    --card-bg: #ffffff;
+    --border-color: #d0d4dd;
+    --hover-bg: rgba(102,126,234,0.08);
+    --primary-color: #667eea;
+    --secondary-color: #764ba2;
+    --info-bg: #f0f4ff;
+    --result-bg: #f4f7ff;
+    --input-bg: #ffffff;
+    --text: #1a1a2e;
+    --subtext: #666699;
+    --border: #d0d4dd;
+    --heading: #333366;
+    --success: #28a745;
+    --warning: #ffc107;
+    --danger: #dc3545;
+    --info: #17a2b8;
+    --surface: #ffffff;
+    --text-muted: #888899;
+    --unread-bg: #e8f0ff;
+    --trash-bg: #fff5f5;
+    --primary: #667eea;
+    --bg: #ffffff;
+}
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
